@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from pylab import rcParams
-rcParams['figure.figsize'] = 10, 10
+rcParams['figure.figsize'] = 8, 8
 
 v = np.array([[0.267004,  0.004874,  0.329415],
               [0.270595,  0.214069,  0.507052],
@@ -57,11 +57,7 @@ def show_label_activation_map(labels, width, activation, interpolation='sinc', c
     if cmap is None:
         cmap = l
 
-    a = np.zeros((width, width))
-    for idx, x in enumerate(activation):
-        a[idx % width, idx // width] = x
-
-    plt.imshow(a, extent=[0, width, width, 0], interpolation=interpolation, cmap=cmap)
+    plt.imshow(activation, extent=[0, width, width, 0], interpolation=interpolation, cmap=cmap)
 
 
 def show_label_scatter_map(labels, width, arrow_vectors):

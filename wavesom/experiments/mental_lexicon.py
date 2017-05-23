@@ -1,16 +1,14 @@
 import json
-import numpy as np
 import time
-
-from somplay.amlap.lexisom import Lexisom
-from somplay.experiments.preprocessing.ortho import Orthographizer
-from somplay.experiments.preprocessing.sivi.ipapy_features import ipapy_sivi
-from somplay.experiments.preprocessing.sampler import random_sample
-from somplay.experiments.preprocessing.bow_encoder import BowEncoder
-from somplay.experiments.preprocessing.sivi.binary_sivi import binary_sivi
-
-from collections import Counter, defaultdict
+from collections import defaultdict
 from string import ascii_lowercase
+
+import numpy as np
+from wavesom.experiments.preprocessing.sivi.ipapy_features import ipapy_sivi
+
+from wavesom.experiments.preprocessing.bow_encoder import BowEncoder
+from wavesom.experiments.preprocessing.sampler import random_sample
+from wavesom.wavesom import Wavesom
 
 
 def check(sample_set, s, o):
@@ -42,7 +40,7 @@ if __name__ == "__main__":
 
     max_len = 6
 
-    sivi = binary_sivi(4)
+    sivi = ipapy_sivi(4)
     o = BowEncoder()
     orth_vec_len = max_len * o.datalen
     np.random.seed(44)
@@ -96,7 +94,7 @@ if __name__ == "__main__":
 
     start = time.time()
 
-    s = Lexisom((20, 20), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
+    s = Wavesom((20, 20), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
     s.train(X, 100, total_updates=10000, batch_size=100, show_progressbar=True, stop_nb_updates=0.5)
 
     # TODO: increase map size, play with hyperparams

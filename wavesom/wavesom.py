@@ -32,9 +32,9 @@ class Wavesom(Batch_Som):
     @classmethod
     def load(cls, path):
         """
-        Loads a Lexisom
+        Loads a Wavesom
 
-        :param path: The path to the JSON file where the lexisom is stored
+        :param path: The path to the JSON file where the wavesom is stored
         :return: A lexisom.
         """
         data = json.load(open(path))
@@ -59,7 +59,7 @@ class Wavesom(Batch_Som):
 
     def save(self, path):
         """
-        Save a lexisom
+        Save a wavesom
 
         :param path: The path to save the lexisom to.
         :return: None
@@ -98,7 +98,7 @@ class Wavesom(Batch_Som):
 
         for x in X:
 
-            distance = self._euclidean(x, weights=temp_weights)
+            distance = self.distance_function(x, weights=temp_weights)
             distances.extend(distance)
 
         return np.array(distances)
@@ -148,11 +148,31 @@ class Wavesom(Batch_Som):
         return {k: np.array(v) for k, v in dicto.items()}
 
     def propagate_values(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None):
+        """
+
+
+        :param vector:
+        :param max_depth:
+        :param num:
+        :param start_idx:
+        :param end_idx:
+        :return:
+        """
 
         p = self.propagate(vector, max_depth, num, start_idx, end_idx, False)
         return {k: v.mean(axis=0) for k, v in p.items()}
 
     def get_value(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None):
+        """
+
+
+        :param vector:
+        :param max_depth:
+        :param num:
+        :param start_idx:
+        :param end_idx:
+        :return:
+        """
 
         s = self.propagate_values(vector, max_depth, num, start_idx, end_idx)
         return np.array(list(s.values())).sum(axis=0)

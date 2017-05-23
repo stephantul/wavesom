@@ -5,8 +5,8 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 
-from somplay.visualization.images2gif import writeGif
-from somplay.experiments.mental_lexicon_bi import transfortho
+from wavesom.visualization.images2gif import writeGif
+from wavesom.experiments.mental_lexicon_bi import transfortho
 from PIL import Image
 
 

@@ -2,11 +2,10 @@ import json
 import numpy as np
 import time
 
-from somplay.amlap.lexisom import Lexisom
-from somplay.experiments.preprocessing.ortho import Orthographizer
-from somplay.experiments.preprocessing.bow_encoder import BowEncoder
-from somplay.experiments.preprocessing.sivi.ipapy_features import ipapy_sivi
-from somplay.experiments.preprocessing.sampler import random_sample
+from wavesom.wavesom import Wavesom
+from wavesom.experiments.preprocessing.ortho import Orthographizer
+from wavesom.experiments.preprocessing.sivi.ipapy_features import ipapy_sivi
+from wavesom.experiments.preprocessing.sampler import random_sample
 # from somplay.experiments.preprocessing.sivi.binary_sivi import binary_sivi
 
 from collections import Counter, defaultdict
@@ -105,7 +104,7 @@ if __name__ == "__main__":
 
     start = time.time()
 
-    s = Lexisom((10, 10), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
+    s = Wavesom((10, 10), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
     s.train(X, 10, total_updates=1000, batch_size=100, show_progressbar=True, stop_nb_updates=0.5)
 
     # TODO: increase map size, play with hyperparams

@@ -2,11 +2,10 @@ import json
 import numpy as np
 import time
 
-from somplay.amlap.lexisom import Lexisom
-from somplay.experiments.preprocessing.ortho import Orthographizer
-from somplay.experiments.preprocessing.bow_encoder import BowEncoder
-from somplay.experiments.preprocessing.sivi.ipapy_features import ipapy_sivi
-from somplay.experiments.preprocessing.sampler import random_sample
+from wavesom.wavesom import Wavesom
+from wavesom.experiments.preprocessing.ortho import Orthographizer
+from wavesom.experiments.preprocessing.sivi.ipapy_features import ipapy_sivi
+from wavesom.experiments.preprocessing.sampler import random_sample
 
 from collections import Counter, defaultdict
 from string import ascii_lowercase
@@ -14,7 +13,7 @@ from string import ascii_lowercase
 
 def show(word, o, orth_vec_len, s, sap, depth=5, num=3):
 
-    from somplay.visualization.simple_viz import show_label_arrow_map, show_label_scatter_map, show_label_activation_map
+    from wavesom.visualization.simple_viz import show_label_arrow_map, show_label_scatter_map, show_label_activation_map
     import matplotlib.pyplot as plt
 
     plt.close()
@@ -24,8 +23,8 @@ def show(word, o, orth_vec_len, s, sap, depth=5, num=3):
     b = s.propagate(a, max_depth=depth, num=num)
 
     # show_label_arrow_map(sap, 10, b)
-    show_label_scatter_map(sap, 10, b)
-    show_label_activation_map(sap, 10, s.get_value(a, max_depth=depth, num=num).reshape(10, 10).T)
+    # show_label_scatter_map(sap, s.map_dimensions[0], b)
+    show_label_activation_map(sap, s.map_dimensions[0], s.get_value(a, max_depth=depth, num=num).reshape(s.map_dimensions[0], s.map_dimensions[0]).T)
 
 
 def evaluate(pas_dict, s):
@@ -136,6 +135,9 @@ if __name__ == "__main__":
             print("{0} too long: {1}".format(ortho, len(ortho)))
             continue
 
+        if ortho not in words:
+            continue
+
         if ortho not in words and idx >= max_lex:
             continue
 
@@ -179,7 +181,7 @@ if __name__ == "__main__":
     # s.train(X, 300, total_updates=10000, batch_size=100, show_progressbar=True, stop_nb_updates=0.5)
     # s = Lexisom.load("bi_lexicon.json")
     # s = Lexisom.load("bi_freq.json")
-    s = Lexisom.load("2020som_log.json")
+    s = Wavesom.load("saved_models/2020som_log.json")
 
     print("Took {0} seconds".format(time.time() - start))
 
