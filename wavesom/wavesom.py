@@ -1,8 +1,8 @@
 import numpy as np
 import json
 
-from somber.batch.som import Som as Batch_Som
-from somber.utils import expo, linear
+from somber.batch.som import Som
+from somber.utils import expo, linear, np_min
 from collections import defaultdict
 
 
@@ -11,7 +11,7 @@ def norm(vector):
     return np.square(vector / np.linalg.norm(vector))
 
 
-class Wavesom(Batch_Som):
+class Wavesom(Som):
 
     def __init__(self,
                  map_dim,
@@ -22,7 +22,7 @@ class Wavesom(Batch_Som):
                  lrfunc=expo,
                  nbfunc=expo,
                  sigma=None,
-                 min_max=np.argmin):
+                 min_max=np_min):
 
         super().__init__(map_dim, dim, learning_rate, lrfunc, nbfunc, sigma, min_max)
 
@@ -30,17 +30,18 @@ class Wavesom(Batch_Som):
         self.phon_len = phon_len
 
     @classmethod
-    def load(cls, path):
+    def load(cls, path, array_type=np):
         """
         Loads a Wavesom
 
         :param path: The path to the JSON file where the wavesom is stored
+        :param array_type: The array type to use.
         :return: A lexisom.
         """
         data = json.load(open(path))
 
         weights = data['weights']
-        weights = np.array(weights, dtype=np.float32)
+        weights = array_type.asarray(weights, dtype=np.float32)
         datadim = weights.shape[1]
 
         dimensions = data['dimensions']
@@ -119,7 +120,7 @@ class Wavesom(Batch_Som):
         dist = self._predict_base_part(X, offset)
         return self.min_max(dist, axis=1)
 
-    def propagate(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None, numbers=True):
+    def activate(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None, numbers=True):
         """
         Propagates information through the network weights, simulating attractors.
 
@@ -135,7 +136,7 @@ class Wavesom(Batch_Som):
         result = []
         mask = []
 
-        self.rec_propagate(vector, result, mask, max_depth, num, start_idx, end_idx)
+        self._inner_activate(vector, result, mask, max_depth, num, start_idx, end_idx)
 
         dicto = defaultdict(list)
 
@@ -147,7 +148,7 @@ class Wavesom(Batch_Som):
 
         return {k: np.array(v) for k, v in dicto.items()}
 
-    def propagate_values(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None):
+    def activate_values(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None):
         """
 
 
@@ -159,10 +160,10 @@ class Wavesom(Batch_Som):
         :return:
         """
 
-        p = self.propagate(vector, max_depth, num, start_idx, end_idx, False)
+        p = self.activate(vector, max_depth, num, start_idx, end_idx, False)
         return {k: v.mean(axis=0) for k, v in p.items()}
 
-    def get_value(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None):
+    def activate_state(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None):
         """
 
 
@@ -173,11 +174,13 @@ class Wavesom(Batch_Som):
         :param end_idx:
         :return:
         """
+        if len(vector) != self.orth_len:
+            raise ValueError("Vector length is not the orth_vec_len, {0} and {1}".format(len(vector), self.orth_len))
 
-        s = self.propagate_values(vector, max_depth, num, start_idx, end_idx)
+        s = self.activate_values(vector, max_depth, num, start_idx, end_idx)
         return np.array(list(s.values())).sum(axis=0)
 
-    def rec_propagate(self, x, result, mask, max_depth, num, startidx, end_idx, depth=0, strength=1.0):
+    def _inner_activate(self, x, result, mask, max_depth, num, startidx, end_idx, depth=0, strength=1.0):
         """
         A recursive propagation function.
 
@@ -217,12 +220,12 @@ class Wavesom(Batch_Som):
         mask.append(depth)
 
         for x, p in zip(*[self.weights[sort], pred]):
-            self.rec_propagate(x,
-                               result,
-                               mask,
-                               max_depth,
-                               num,
-                               startidx,
-                               end_idx,
-                               depth=depth+1,
-                               strength=(strength*p))
+            self._inner_activate(x,
+                                 result,
+                                 mask,
+                                 max_depth,
+                                 num,
+                                 startidx,
+                                 end_idx,
+                                 depth=depth+1,
+                                 strength=(strength*p))
