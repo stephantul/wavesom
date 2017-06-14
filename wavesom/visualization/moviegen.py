@@ -20,7 +20,7 @@ def moviegen(word, fn, to, num_neighbors, s, gen_func, sap, o, orth_vec_len, sta
     frames = []
 
     start = time.time()
-    res = s.propagate_values(a, max_depth=to, num=num_neighbors, start_idx=start_idx, end_idx=end_idx)
+    res = s.activate_values(a, max_depth=to, num=num_neighbors, start_idx=start_idx, end_idx=end_idx)
     print("Took {0} seconds".format(time.time() - start))
 
     for x in range(1, to):

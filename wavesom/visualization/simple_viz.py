@@ -16,14 +16,18 @@ v = np.array([[0.267004,  0.004874,  0.329415],
 l = ListedColormap(v)
 
 
-def show_labelmap(labels, width, lang_dict={}):
+def show_labelmap(labels, width, lang_dict=None):
     """
     Shows a map with labels
 
     :param labels: The labels
+    :param lang_dict: The language dictionary
     :param width: The width of the map
     :return:
     """
+
+    if lang_dict is None:
+        lang_dict = {}
 
     plt.axis([0, width, 0, width])
 
@@ -46,10 +50,8 @@ def show_labelmap(labels, width, lang_dict={}):
             plt.annotate(word, ((k // width) + 0.1, (k % width) + 0.05 + (0.2 * loc_dict[k])), size=10, color=color)
             loc_dict[k] += 1
 
-    # plt.show()
 
-
-def show_label_activation_map(labels, width, activation, interpolation='sinc', cmap=None, langdict={}):
+def show_label_activation_map(labels, width, activation, interpolation='sinc', cmap=None, langdict=None):
 
     plt.axis([0, width, 0, width])
     show_labelmap(labels, width, langdict)
@@ -110,27 +112,5 @@ def show_label_arrow_map(labels, width, arrow_vectors, colors=('magenta',)):
                       alpha=(0.5 / (len(arrow_vectors) * (idx+1))) + 0.5,
                       linewidth=1.0)
         curr_vectors = vec
-
-    plt.show()
-
-def context_map(contexts, width, height):
-    """
-    To be used with a recursive SOM.
-    In a recursive SOM, each context is a full copy of the map.
-    Hence, we need lots of subplots to show the effect of context.
-
-    :param contexts:
-    :param width:
-    :param height:
-    :return:
-    """
-
-    plt.close()
-
-    for idx, map in enumerate(contexts):
-
-        f = plt.subplot(width, height, idx+1)
-        f.axis("off")
-        plt.imshow(map.reshape(width, height).transpose(), vmax=1.0, vmin=0.0)
 
     plt.show()
