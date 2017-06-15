@@ -6,9 +6,59 @@ from somber.utils import expo, linear, np_min
 from collections import defaultdict
 
 
-def norm(vector):
+def show(stimulus, orthographizer, wavesom, sap, depth=5, num=3):
+    """
+    Show the response of the map to some stimulus.
 
-    return np.square(vector / np.linalg.norm(vector))
+    :param stimulus: The input stimulus as a string.
+    :param orthographizer: The orthographizer used to encode the input stimulus.
+    :param wavesom: The trained wavesom.
+    :param sap: The word2idx dictionary, for visualization.
+    :param depth: The depth to descend in the tree.
+    :param num: The number of neighbors to consider in the computation.
+    :return: None
+    """
+    # Imports
+    from wavesom.visualization.simple_viz import show_label_activation_map
+    import matplotlib.pyplot as plt
+
+    # Close previous plot
+    plt.close()
+
+    # Transform the stimulus to a vector.
+    a = transfortho(stimulus, orthographizer, wavesom.orth_len)
+    # Show the map's response to the stimulus
+    show_label_activation_map(sap, wavesom.map_dimensions[0], wavesom.activate_state(a, max_depth=depth, num=num).reshape(wavesom.map_dimensions).T)
+
+
+def evaluate(pas_dict, s, o):
+
+    results = []
+    words = []
+
+    for k, v in pas_dict.items():
+        words.append(k)
+        results.append(s.predict_part(transfortho(k, o, orth_vec_len), 0)[0:] in v)
+
+    return results, words
+
+
+def dist_to_lexicon(vec, lexicon, X, num_to_return=5):
+
+    lex = np.array(lexicon)
+    dists = np.sum(np.square(X - vec), axis=1)
+    s = np.argsort(dists)[:num_to_return]
+
+    return lex[s], dists[s]
+
+
+def transfortho(x, o, length):
+
+    zero = np.zeros((length,))
+    vec = o.vectorize(x).ravel()
+    zero[:len(vec)] += vec
+
+    return zero
 
 
 class Wavesom(Som):
@@ -23,8 +73,16 @@ class Wavesom(Som):
                  nbfunc=expo,
                  sigma=None,
                  min_max=np_min):
-
-        super().__init__(map_dim, dim, learning_rate, lrfunc, nbfunc, sigma, min_max)
+        """
+        initialize a Wavesom
+        """
+        super().__init__(map_dim,
+                         dim,
+                         learning_rate,
+                         lrfunc,
+                         nbfunc,
+                         sigma,
+                         min_max)
 
         self.orth_len = orth_len
         self.phon_len = phon_len
@@ -32,7 +90,7 @@ class Wavesom(Som):
     @classmethod
     def load(cls, path, array_type=np):
         """
-        Loads a Wavesom
+        Load a Wavesom.
 
         :param path: The path to the JSON file where the wavesom is stored
         :param array_type: The array type to use.
@@ -52,7 +110,15 @@ class Wavesom(Som):
         orth_len = data['orth_len']
         phon_len = data['orth_len']
 
-        s = cls(dimensions, datadim, lr, orth_len, phon_len, lrfunc=lrfunc, nbfunc=nbfunc, sigma=sigma)
+        s = cls(dimensions,
+                datadim,
+                lr,
+                orth_len,
+                phon_len,
+                lrfunc=lrfunc,
+                nbfunc=nbfunc,
+                sigma=sigma)
+
         s.weights = weights
         s.trained = True
 
@@ -60,12 +126,11 @@ class Wavesom(Som):
 
     def save(self, path):
         """
-        Save a wavesom
+        Save a wavesom.
 
         :param path: The path to save the lexisom to.
         :return: None
         """
-
         dicto = {}
         dicto['weights'] = [[float(w) for w in x] for x in self.weights]
         dicto['dimensions'] = self.map_dimensions
@@ -80,13 +145,13 @@ class Wavesom(Som):
 
     def _predict_base_part(self, X, offset):
         """
-        Computes the prediction for part of the weights, specified by an offset
+        Compute the prediction for part of the weights, specified by an offset.
 
         :param X: The input data
         :param offset: The offset which is applied to axis 1 of X
-        :return: An matrix containing the distance of each sample to each weight.
+        :return: An matrix containing the distance of each sample to
+        each weight.
         """
-
         if len(X.shape) == 1:
             X = X[np.newaxis, :]
 
@@ -94,35 +159,83 @@ class Wavesom(Som):
         X = self._create_batches(X, batch_size=1)
 
         temp_weights = self.weights[:, offset:offset+datadim]
-
         distances = []
 
         for x in X:
 
-            distance = self.distance_function(x, weights=temp_weights)
+            distance = self.distance_function(x, weights=temp_weights)[0]
             distances.extend(distance)
 
         return np.array(distances)
 
     def predict_part(self, X, offset, orth_vec_len=0):
         """
-        Predict BMUs based on part of the weights
+        Predict BMUs based on part of the weights.
 
         :param X:
         :param offset:
         :param orth_vec_len:
         :return:
         """
-
         if orth_vec_len:
             X = X[:, :orth_vec_len]
 
         dist = self._predict_base_part(X, offset)
-        return self.min_max(dist, axis=1)
+        return self.min_max(dist, axis=1)[1]
 
-    def activate(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None, numbers=True):
+    def activate_state(self,
+                       vector,
+                       max_depth=5,
+                       num=3,
+                       start_idx=0,
+                       end_idx=None):
         """
-        Propagates information through the network weights, simulating attractors.
+        Activate the map and get a state.
+
+        :param vector:
+        :param max_depth:
+        :param num:
+        :param start_idx:
+        :param end_idx:
+        :return:
+        """
+        pre_ = [self._predict_base_part(x[start_idx:end_idx], start_idx)[0] for x in self.weights]
+        precalc = [x.argsort()[1:num+1] for x in pre_]
+        precalc = [1.0 - (x[p] / x[p].max()) for x, p in zip(pre_, precalc)]
+        s = self.activate_values(vector, max_depth, precalc, num, start_idx, end_idx)
+        return np.array(list(s.values())).sum(axis=0)
+
+    def activate_values(self,
+                        vector,
+                        precalc,
+                        max_depth=5,
+                        num=3,
+                        start_idx=0,
+                        end_idx=None):
+        """
+        Activate the map in response to some input, and get a value.
+
+        :param vector:
+        :param max_depth:
+        :param num:
+        :param start_idx:
+        :param end_idx:
+        :return:
+        """
+        p = self.activate(vector, max_depth, precalc, num, start_idx, end_idx, False)
+        return {k: v.mean(axis=0) for k, v in p.items()}
+
+
+    def activate(self,
+                 vector,
+                 precalc,
+                 max_depth=5,
+                 num=3,
+                 start_idx=0,
+                 end_idx=None,
+                 numbers=True):
+        """
+        Propagates information through the network weights.
 
         :param vector: The vector to propagate
         :param max_depth: The max depth to which to propagate
@@ -132,11 +245,17 @@ class Wavesom(Som):
         :param numbers: Whether to return indices or the raw weights
         :return: An dictionary of weights for each timestep.
         """
-
         result = []
         mask = []
 
-        self._inner_activate(vector, result, mask, max_depth, num, start_idx, end_idx)
+        self._inner_activate(vector,
+                             result,
+                             mask,
+                             max_depth,
+                             num,
+                             start_idx,
+                             end_idx,
+                             precalc)
 
         dicto = defaultdict(list)
 
@@ -148,41 +267,19 @@ class Wavesom(Som):
 
         return {k: np.array(v) for k, v in dicto.items()}
 
-    def activate_values(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None):
+    def _inner_activate(self,
+                        x,
+                        result,
+                        mask,
+                        max_depth,
+                        num,
+                        startidx,
+                        end_idx,
+                        precalc,
+                        depth=0,
+                        strength=1.0):
         """
-
-
-        :param vector:
-        :param max_depth:
-        :param num:
-        :param start_idx:
-        :param end_idx:
-        :return:
-        """
-
-        p = self.activate(vector, max_depth, num, start_idx, end_idx, False)
-        return {k: v.mean(axis=0) for k, v in p.items()}
-
-    def activate_state(self, vector, max_depth=5, num=3, start_idx=0, end_idx=None):
-        """
-
-
-        :param vector:
-        :param max_depth:
-        :param num:
-        :param start_idx:
-        :param end_idx:
-        :return:
-        """
-        if len(vector) != self.orth_len:
-            raise ValueError("Vector length is not the orth_vec_len, {0} and {1}".format(len(vector), self.orth_len))
-
-        s = self.activate_values(vector, max_depth, num, start_idx, end_idx)
-        return np.array(list(s.values())).sum(axis=0)
-
-    def _inner_activate(self, x, result, mask, max_depth, num, startidx, end_idx, depth=0, strength=1.0):
-        """
-        A recursive propagation function.
+        Recursively activate the map.
 
         :param x:
         :param result: The
@@ -195,7 +292,6 @@ class Wavesom(Som):
         :param strength:
         :return:
         """
-
         if depth == max_depth or strength < 0.1:
             return
 
@@ -208,18 +304,19 @@ class Wavesom(Som):
             pred = self._predict_base_part(x[:self.orth_len], 0)[0]
             sort = pred.argsort()[:num]
             pred = 1.0 - (pred[sort] / pred[sort].max())
-
         else:
-            pred = self._predict_base_part(x[startidx:end_idx], startidx)[0]
-            sort = pred.argsort()[1:num+1]
-            pred = 1.0 - (pred[sort] / pred[sort].max())
+            pred = precalc[x]
 
+        if depth == 1:
+            print(1)
+
+        sort = np.flatnonzero(pred > 0)
         res[sort] = pred * strength
 
         result.append(res)
         mask.append(depth)
 
-        for x, p in zip(*[self.weights[sort], pred]):
+        for x, p in zip(*[sort, pred]):
             self._inner_activate(x,
                                  result,
                                  mask,
@@ -227,5 +324,6 @@ class Wavesom(Som):
                                  num,
                                  startidx,
                                  end_idx,
+                                 precalc,
                                  depth=depth+1,
                                  strength=(strength*p))
