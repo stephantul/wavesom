@@ -66,9 +66,6 @@ for n, x in zip(unique_words, s.predict(X_orig)):
 # p = transfortho("KEEL", o, s.weights.shape[1])
 # dist1 = np.linalg.norm(p[None, None, :] - w1[None, :, :])
 # dist2 = np.linalg.norm(p[None, None, :] - s.weights[:, None, :], axis=2)
-import cProfile
-cProfile.run("x = s.activate_state(X_orig[1], 8, 12)")
-print("Done, dome")
 
 # inv = {idx: k for idx, k in enumerate(s.invert_projection(X_orig, unique_words))}
 # from wavesom.visualization.simple_viz import show_labelmap

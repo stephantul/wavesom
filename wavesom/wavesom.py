@@ -225,7 +225,6 @@ class Wavesom(Som):
         p = self.activate(vector, max_depth, precalc, num, start_idx, end_idx, False)
         return {k: v.mean(axis=0) for k, v in p.items()}
 
-
     def activate(self,
                  vector,
                  precalc,
@@ -235,7 +234,7 @@ class Wavesom(Som):
                  end_idx=None,
                  numbers=True):
         """
-        Propagates information through the network weights.
+        Propagate information through the network weights.
 
         :param vector: The vector to propagate
         :param max_depth: The max depth to which to propagate
