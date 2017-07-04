@@ -1,7 +1,7 @@
 import numpy as np
 import json
 
-from somber.batch.som import Som
+from somber import Som
 from somber.utils import expo, linear, np_min
 from collections import defaultdict
 
@@ -94,7 +94,7 @@ class Wavesom(Som):
 
         :param path: The path to the JSON file where the wavesom is stored
         :param array_type: The array type to use.
-        :return: A lexisom.
+        :return: A wavesom.
         """
         data = json.load(open(path))
 

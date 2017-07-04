@@ -3,16 +3,16 @@ import numpy as np
 
 from wavesom.wavesom import Wavesom, transfortho, show
 from experiments.setup import setup
-from experiments.preprocessing.orthographizer.mcclelland import mcclelland_orthography
 
 from collections import defaultdict
 
-path = "saved_models/dim50400epochs.json"
+path = "saved_models/bilingual_model_big.json"
+dicto = json.load(open("data/syllable_lexicon.json"))
+
+
 dicto = json.load(open("data/syllable_lexicon.json"))
 
 max_len = 7
-
-np.random.seed(44)
 
 wordlist = {'kind', 'mind', 'bind',
             'room', 'wolf', 'way',
@@ -45,19 +45,20 @@ wordlist = {'kind', 'mind', 'bind',
             'keek', 'leek', 'gek',
             'creek', 'ziek', 'piek'}
 
-o = mcclelland_orthography()
-
-X, X_orig, unique_words, counts = setup(dicto, max_len, wordlist)
-orth_vec_len = len(o.data["A"]) * max_len
+X, X_orig, s_ = setup(dicto, max_len, wordlist)
+orth_vec_len = 14 * max_len
 
 s = Wavesom.load(path, np)
 
 w2l = defaultdict(list)
-l2w = defaultdict(list)
+l2w = defaultdict(set)
+quant = {}
 
-for n, x in zip(unique_words, s.predict(X_orig)):
+for n, x, q in zip(s_, s.predict(X_orig), s.quant_error(X_orig)):
+    n = " ".join([n[0], "-".join(n[1])])
     w2l[n].append(x)
-    l2w[x].append(n)
+    l2w[x].add(n)
+    quant[n] = q
 
 # a, b = [y for x, y in w2l.items() if x.startswith("keel")]
 # w1 = s.weights[a, :]

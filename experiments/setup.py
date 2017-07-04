@@ -1,13 +1,15 @@
 import numpy as np
 
-from collections import defaultdict, Counter
-from string import ascii_lowercase
-from .preprocessing.onc.ipapy_onc import ipapy_onc
-from .preprocessing.orthographizer.mcclelland import mcclelland_orthography
+from string import ascii_uppercase
+from wordkit.feature_extractors import binary_character_features, phoneme_features
+from wordkit.transformers import Orthographizer, Onc
+from wordkit import WordKit
+from wordkit.features.orthographical import mcclelland
+from wordkit.features.phonological import patpho_bin
 from .preprocessing.sampler import random_sample
 
 
-def setup(words, max_len, wordlist, num_to_sample=10000):
+def setup(words, max_len, wordlist, num_to_sample=10000, min_freq=10):
     """
     Set up a set of words through sampling.
 
@@ -19,73 +21,46 @@ def setup(words, max_len, wordlist, num_to_sample=10000):
     :max_len: The maximum length of a word in number of letters.
     :wordlist: A wordlist to sample from.
     :num_to_sample: The number of words to sample in total.
+    :min_freq: The minimum number of frequency a certain word can occur with.
+    :return: A matrix of words, Every unique word as a vector,
+    Every unique word, and the word counts.
     """
     wordlist = set(wordlist)
 
-    i = ipapy_onc(3)
-    o = mcclelland_orthography()
-    orth_vec_len = max_len * len(o.data["A"])
+    vowel_features, consonant_features = phoneme_features(patpho_bin)
+    character_features = binary_character_features(mcclelland)
+
+    orth = Orthographizer(character_features)
+    onc = Onc(vowel_features, consonant_features)
 
     np.random.seed(44)
 
-    listo = []
-    X = []
-
-    idx = 0
-
-    w2id = defaultdict(list)
-
+    unique_words = []
     frequencies = []
-    word_dict = defaultdict(list)
 
-    _, _, _, syll = zip(*words)
+    for o, freq, _, syll in words:
 
-    i.fit(syll)
-
-    for ortho, freq, lang, syll in words:
-
-        if ortho not in wordlist:
+        o = o.upper()
+        if min_freq > freq:
             continue
-
-        if len(set(ortho) - set(ascii_lowercase)) > 0:
+        if len(o) > max_len:
             continue
-
-        if len(ortho) > max_len:
-            print("{0} too long: {1}".format(ortho, len(ortho)))
+        if wordlist and o.lower() not in wordlist:
             continue
-
-        orth = np.zeros((orth_vec_len,))
-        x_orth = np.ravel(o.vectorize(ortho.upper()))
-
-        orth[:x_orth.shape[0]] = x_orth
-
-        try:
-            x_phon = i.vectorize_single(syll)
-        except ValueError as e:
-            print("Skipped {0}".format(ortho, str(syll)))
-            print(e)
+        if set(o) - set(ascii_uppercase):
             continue
+        unique_words.append((o, syll))
+        frequencies.append(freq)
 
-        listo.append(" ".join((ortho, str(syll))))
-        X.append(np.hstack([orth, x_phon]))
+    w = WordKit(character_features,
+                vowel_features,
+                consonant_features,
+                orth,
+                onc)
 
-        w2id[ortho].append(idx)
-        word_dict[ortho].append(str(syll))
+    w.fit(unique_words)
 
-        frequencies.append(int(freq))
-        idx += 1
+    X_unique = np.hstack(w.transform(unique_words))
+    X = np.array(random_sample(X_unique, frequencies, 10000))
 
-    X_unique = np.array(X)
-    frequencies = np.log(np.array(frequencies) + 1)
-
-    sample = np.array(random_sample(listo,
-                                    frequencies,
-                                    num_to_sample,
-                                    min_count=10))
-    unique_words = list(set(sample))
-    counts = Counter(sample)
-
-    X = np.array([X_unique[listo.index(item)] for item in sample])
-    X_unique = np.array([X_unique[listo.index(x)] for x in unique_words])
-
-    return X, X_unique, unique_words, counts
+    return X, X_unique, unique_words

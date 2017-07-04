@@ -1,13 +1,10 @@
 import numpy as np
 
 
-def random_sample(words, counts, desired_size, min_count=1):
+def random_sample(words, counts, desired_size):
 
     assert(len(words) == len(counts))
-
-    output = words * min_count
-
-    print(len(set(output)))
+    output = []
 
     counts = counts / np.sum(counts)
     start = 0.0
@@ -18,7 +15,7 @@ def random_sample(words, counts, desired_size, min_count=1):
 
     probas = np.array(probas)
 
-    for x in np.random.rand(desired_size - (min_count * len(words))):
+    for x in np.random.rand(desired_size):
         z = probas - x
         z = z > 0
         if not np.any(z):
