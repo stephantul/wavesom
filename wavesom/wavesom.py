@@ -6,6 +6,12 @@ from somber.utils import expo, linear, np_min
 from collections import defaultdict
 
 
+def normalized_sigmoid(x, *, width=1, center=1):
+    s = 1 / (1+np.exp(width*(x-center)))
+    s = s - np.min(s)
+    return s / np.max(s)  # normalize function to 0-1
+
+
 def show(stimulus, orthographizer, wavesom, sap, depth=5, num=3):
     """
     Show the response of the map to some stimulus.
@@ -183,146 +189,31 @@ class Wavesom(Som):
         dist = self._predict_base_part(X, offset)
         return self.min_max(dist, axis=1)[1]
 
-    def activate_state(self,
-                       vector,
-                       max_depth=5,
-                       num=3,
-                       start_idx=0,
-                       end_idx=None):
-        """
-        Activate the map and get a state.
+    def activate(self, x, max_depth=4, threshold=0.15):
 
-        :param vector:
-        :param max_depth:
-        :param num:
-        :param start_idx:
-        :param end_idx:
-        :return:
-        """
-        pre_ = [self._predict_base_part(x[start_idx:end_idx], start_idx)[0] for x in self.weights]
-        precalc = [x.argsort()[1:num+1] for x in pre_]
-        precalc = [1.0 - (x[p] / x[p].max()) for x, p in zip(pre_, precalc)]
-        s = self.activate_values(vector, max_depth, precalc, num, start_idx, end_idx)
-        return np.array(list(s.values())).sum(axis=0)
+        ortho_act = self._predict_base_part(x, 0)
 
-    def activate_values(self,
-                        vector,
-                        precalc,
-                        max_depth=5,
-                        num=3,
-                        start_idx=0,
-                        end_idx=None):
-        """
-        Activate the map in response to some input, and get a value.
+        normalized_activation = np.squeeze(normalized_sigmoid(ortho_act))
 
-        :param vector:
-        :param max_depth:
-        :param num:
-        :param start_idx:
-        :param end_idx:
-        :return:
-        """
-        p = self.activate(vector, max_depth, precalc, num, start_idx, end_idx, False)
-        return {k: v.mean(axis=0) for k, v in p.items()}
+        pre_calc = self._predict_base(self.weights)
 
-    def activate(self,
-                 vector,
-                 precalc,
-                 max_depth=5,
-                 num=3,
-                 start_idx=0,
-                 end_idx=None,
-                 numbers=True):
-        """
-        Propagate information through the network weights.
+        result = defaultdict(list)
+        result[0] = [normalized_activation]
+        self._inner_activation(normalized_activation, 1, pre_calc, max_depth, threshold, result)
 
-        :param vector: The vector to propagate
-        :param max_depth: The max depth to which to propagate
-        :param num: The number of weights to consider at each step
-        :param start_idx: The start index for the data
-        :param end_idx: The end index for the data
-        :param numbers: Whether to return indices or the raw weights
-        :return: An dictionary of weights for each timestep.
-        """
-        result = []
-        mask = []
+        return np.array([np.array(result[idx]) for idx in sorted(result.keys())])
 
-        self._inner_activate(vector,
-                             result,
-                             mask,
-                             max_depth,
-                             num,
-                             start_idx,
-                             end_idx,
-                             precalc)
+    def _inner_activation(self, weights, depth, pre_calc, max_depth, threshold, result):
 
-        dicto = defaultdict(list)
+        if depth > 5:
+            mixin = False
 
-        for idx, res in zip(mask, result):
-            if numbers:
-                dicto[idx].append(np.argsort(-res)[:num])
-            else:
-                dicto[idx].append(res)
+        for idx in np.flatnonzero(weights > threshold):
 
-        return {k: np.array(v) for k, v in dicto.items()}
+            pred = pre_calc[idx]
+            res = np.squeeze(normalized_sigmoid(pred) * weights[idx])
+            result[depth].append(res)
+            if np.any(res > threshold) and depth < max_depth:
+                self._inner_activation(res, depth+1, pre_calc, max_depth, threshold, result)
 
-    def _inner_activate(self,
-                        x,
-                        result,
-                        mask,
-                        max_depth,
-                        num,
-                        startidx,
-                        end_idx,
-                        precalc,
-                        depth=0,
-                        strength=1.0):
-        """
-        Recursively activate the map.
-
-        :param x:
-        :param result: The
-        :param mask:
-        :param max_depth:
-        :param num:
-        :param startidx:
-        :param end_idx:
-        :param depth:
-        :param strength:
-        :return:
-        """
-        if depth == max_depth or strength < 0.1:
-            return
-
-        if end_idx is None:
-            end_idx = self.data_dim
-
-        res = np.zeros(self.weight_dim)
-
-        if depth == 0:
-            pred = self._predict_base_part(x[:self.orth_len], 0)[0]
-            sort = pred.argsort()[:num]
-            pred = 1.0 - (pred[sort] / pred[sort].max())
-        else:
-            pred = precalc[x]
-
-        if depth == 1:
-            print(1)
-
-        sort = np.flatnonzero(pred > 0)
-        res[sort] = pred * strength
-
-        result.append(res)
-        mask.append(depth)
-
-        for x, p in zip(*[sort, pred]):
-            self._inner_activate(x,
-                                 result,
-                                 mask,
-                                 max_depth,
-                                 num,
-                                 startidx,
-                                 end_idx,
-                                 precalc,
-                                 depth=depth+1,
-                                 strength=(strength*p))
+        return result
