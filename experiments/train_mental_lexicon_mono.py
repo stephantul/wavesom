@@ -18,28 +18,55 @@ if __name__ == "__main__":
 
     dicto = json.load(open("data/syllable_lexicon.json"))
 
-    dicto = [k for k in dicto if k[2] != 'dut']
-
     max_len = 7
 
-    if args.file is None:
-        raise ValueError("No file is given")
+    dicto = [k for k in dicto if k[2] != 'dut']
 
-    X, X_orig, s_ = setup(dicto, max_len, [], 100000)
+    wordlist = {'kind', 'mind', 'bind',
+                'room', 'wolf', 'way',
+                'wee', 'eten', 'eating',
+                'wind', 'lead', 'speed',
+                'meat', 'meet', 'meten',
+                'spring', 'winter', 'spel',
+                'speel', 'spill', 'spoon',
+                'moon', 'boon', 'doen',
+                'biet', 'beat', 'spijt',
+                'tijd', 'mijt', 'klein',
+                'fijn', 'rein', 'reign',
+                'feign', 'fine', 'mine',
+                'dine', 'wine', 'wijn',
+                'weinig', 'speel', 'meel',
+                'keel', 'veel', 'kiel',
+                'wiel', 'wheel', 'feel',
+                'deal', 'spool', 'spoel',
+                'trol', 'troll', 'wolf',
+                'rond', 'mond', 'mound',
+                'hound', 'found', 'find',
+                'lined', 'spine', 'mine',
+                'cake', 'keek', 'leem',
+                'dessert', 'desert', 'model',
+                'curve', 'dies', 'nies', 'vies',
+                'boot', 'potent', 'sate',
+                'tree', 'rapport', 'lied',
+                'bied', 'mond', 'kei',
+                'steen', 'meen', 'geen',
+                'keek', 'leek', 'gek',
+                'creek', 'ziek', 'piek'}
 
+    X, X_orig, s_ = setup(dicto, max_len, wordlist)
     orth_vec_len = 14 * max_len
 
     start = time.time()
 
     if args.gpu is not None:
-
+        print("using GPU {}".format(args.gpu))
         with cp.cuda.Device(args.gpu):
             X = cp.asarray(X, cp.float32)
             s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
             s.fit(X, args.epochs, total_updates=100, batch_size=250, show_progressbar=True, stop_nb_updates=0.5)
 
     else:
-
+        print("using CPU")
         s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
         s.fit(X, args.epochs, total_updates=100, batch_size=250, show_progressbar=True, stop_nb_updates=0.5)
 

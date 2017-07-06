@@ -37,6 +37,7 @@ def setup(words, max_len, wordlist, num_to_sample=10000, min_freq=10):
 
     unique_words = []
     frequencies = []
+    already_added = set()
 
     for o, freq, _, syll in words:
 
@@ -49,6 +50,10 @@ def setup(words, max_len, wordlist, num_to_sample=10000, min_freq=10):
             continue
         if set(o) - set(ascii_uppercase):
             continue
+        form = " ".join((o, "-".join(syll)))
+        if form in already_added:
+            continue
+        already_added.add(form)
         unique_words.append((o, syll))
         frequencies.append(freq)
 
