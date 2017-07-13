@@ -1,7 +1,7 @@
 import json
 import numpy as np
 
-from wavesom.wavesom import Wavesom, transfortho, show, normalized_sigmoid
+from wavesom.wavesom import Wavesom, transfortho, show, normalize, softmax, sigmoid, weird_normalize
 from experiments.setup import setup
 from experiments.read_blp import read_blp_format
 
@@ -91,17 +91,46 @@ if __name__ == "__main__":
 
     a, b = error_rt_vector = np.array(error_rt_vector).T
 
-    import matplotlib.pyplot as plt
+    states = []
+    deltas = []
+
+    '''p = []
+    states_arr = []
+
+    for word, item in zip(s_, X_orig):
+
+        word = n = " ".join([word[0], "-".join(word[1])])
+        states = []
+
+        for idx in range(50):
+            x, y = s.activate(item[:orth_vec_len])
+            states.append(x)
+
+        p.append((word, states[-1].argmax(), w2l[word]))
+        states_arr.append(states[-1])
+
+    p = sorted(p, key=lambda x: x[0].split()[0])
+    states_arr = np.array(states_arr)'''
+
+    for idx in range(1):
+        x, y = s.activate(X_orig[0, :orth_vec_len])
+        states.append(x)
+
+    for idx in range(150):
+
+        x, y = s.activate()
+        states.append(x)
+
+    x_z = sigmoid(s.distance_function(X_orig, s.weights)[0])
+
+    from wavesom.visualization.moviegen import moviegen
+    print("WRITING")
+    # states = np.array(states)
+    # deltas = np.array(deltas)
+    # p = np.array([normalize((s.cache * x).sum(0)) for x in states])
+
     import cProfile
+    moviegen('drrr.gif', np.array(states).reshape((len(states), 25, 25)).transpose(0, 2, 1), l2w, write_words=False)
 
-    # a, b = [y for x, y in w2l.items() if x.startswith("keel")]
-    # w1 = s.weights[a, :]
-    # w2 = s.weights[b, :]
-
-    # p = transfortho("KEEL", o, s.weights.shape[1])
-    # dist1 = np.linalg.norm(p[None, None, :] - w1[None, :, :])
-    # dist2 = np.linalg.norm(p[None, None, :] - s.weights[:, None, :], axis=2)
-
-    # inv = {idx: k for idx, k in enumerate(s.invert_projection(X_orig, unique_words))}
-    # from wavesom.visualization.simple_viz import show_labelmap
-    # show_labelmap(inv, 50)
+    # TODO: Thresholding: count only neurons with activations above threshold? Maybe?
+    # TODO: no?

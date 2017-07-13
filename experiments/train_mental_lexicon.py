@@ -66,6 +66,6 @@ if __name__ == "__main__":
     else:
         print("using CPU")
         s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
-        s.fit(X, args.epochs, total_updates=100, batch_size=250, show_progressbar=True, stop_nb_updates=0.5)
+        s.fit(X, args.epochs, total_updates=100, batch_size=250, init_pca=False, show_progressbar=True, stop_nb_updates=0.5)
 
     s.save(args.file)

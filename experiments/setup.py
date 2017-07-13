@@ -66,6 +66,6 @@ def setup(words, max_len, wordlist, num_to_sample=10000, min_freq=10):
     w.fit(unique_words)
 
     X_unique = np.hstack(w.transform(unique_words))
-    X = np.array(random_sample(X_unique, frequencies, 10000))
+    X = np.array(random_sample(X_unique, frequencies, num_to_sample))
 
     return X, X_unique, unique_words

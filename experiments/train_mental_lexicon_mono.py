@@ -14,6 +14,7 @@ if __name__ == "__main__":
     parser.add_argument("--file", type=str, help="The path to save the trained model to")
     parser.add_argument("--dim", type=int, help="The map dimensionality", default=30)
     parser.add_argument("--epochs", type=int, help="The number of epochs to train", default=100)
+    parser.add_argument("--batch", type=int, help="The batch size", default=250)
     args = parser.parse_args()
 
     dicto = json.load(open("data/syllable_lexicon.json"))
@@ -63,11 +64,11 @@ if __name__ == "__main__":
         with cp.cuda.Device(args.gpu):
             X = cp.asarray(X, cp.float32)
             s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
-            s.fit(X, args.epochs, total_updates=100, batch_size=250, show_progressbar=True, stop_nb_updates=0.5)
+            s.fit(X, args.epochs, total_updates=100, batch_size=args.batch, init_pca=False, show_progressbar=True, stop_nb_updates=0.5)
 
     else:
         print("using CPU")
         s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
-        s.fit(X, args.epochs, total_updates=100, batch_size=250, show_progressbar=True, stop_nb_updates=0.5)
+        s.fit(X, args.epochs, total_updates=1000, batch_size=args.batch, init_pca=False, show_progressbar=True, stop_nb_updates=0.5)
 
     s.save(args.file)
