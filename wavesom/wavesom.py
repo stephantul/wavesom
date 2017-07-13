@@ -6,10 +6,24 @@ from somber.utils import expo, linear, np_min
 from collections import defaultdict
 
 
-def normalized_sigmoid(x, *, width=1, center=1):
-    s = 1 / (1+np.exp(width*(x-center)))
-    s = s - np.min(s)
-    return s / np.max(s)  # normalize function to 0-1
+def sigmoid(x, *, width=1, center=1):
+    return 1 / (1+np.exp(width*(x-center)))
+
+def normalize(x, *, switch=True):
+
+    if switch:
+        x = x - np.min(x)
+    return x / np.max(x)
+
+def weird_normalize(x):
+
+    x = x / np.max(x)
+    return 1 - x
+
+def softmax(x):
+
+    x = np.exp(x - np.max(x))
+    return x / x.sum()
 
 
 def show(stimulus, orthographizer, wavesom, sap, depth=5, num=3):
@@ -92,6 +106,8 @@ class Wavesom(Som):
 
         self.orth_len = orth_len
         self.phon_len = phon_len
+        self.state = np.random.random(size=len(self.weights)) * .15
+        self.cache = None
 
     @classmethod
     def load(cls, path, array_type=np):
@@ -127,6 +143,8 @@ class Wavesom(Som):
 
         s.weights = weights
         s.trained = True
+        s.cache = np.array([weird_normalize(sigmoid(x)) for x in s._predict_base(s.weights)])
+        [s.activate() for x in range(100)]
 
         return s
 
@@ -189,31 +207,17 @@ class Wavesom(Som):
         dist = self._predict_base_part(X, offset)
         return self.min_max(dist, axis=1)[1]
 
-    def activate(self, x, max_depth=4, threshold=0.15):
+    def activate(self, x=None):
 
-        ortho_act = self._predict_base_part(x, 0)
+        if x is None:
+            x = np.ones(len(self.weights)) / len(self.weights)
+            # x /= len(x)
+        else:
+            x = sigmoid(self._predict_base_part(x, 0)[0])
 
-        normalized_activation = np.squeeze(normalized_sigmoid(ortho_act))
-
-        pre_calc = self._predict_base(self.weights)
-
-        result = defaultdict(list)
-        result[0] = [normalized_activation]
-        self._inner_activation(normalized_activation, 1, pre_calc, max_depth, threshold, result)
-
-        return np.array([np.array(result[idx]) for idx in sorted(result.keys())])
-
-    def _inner_activation(self, weights, depth, pre_calc, max_depth, threshold, result):
-
-        if depth > 5:
-            mixin = False
-
-        for idx in np.flatnonzero(weights > threshold):
-
-            pred = pre_calc[idx]
-            res = np.squeeze(normalized_sigmoid(pred) * weights[idx])
-            result[depth].append(res)
-            if np.any(res > threshold) and depth < max_depth:
-                self._inner_activation(res, depth+1, pre_calc, max_depth, threshold, result)
-
-        return result
+        self.state += x
+        self.state = np.mean(self.cache * self.state, 0)
+        # self.state += s
+        # self.state = normalize(self.state, switch=False)
+        # self.state.clip(min=0.1)
+        return np.copy(self.state), 0

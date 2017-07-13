@@ -1,39 +1,47 @@
 import matplotlib
 matplotlib.use('Agg')
+from matplotlib.colors import ListedColormap
+from .images2gif import writeGif
 
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+import visdom
 
-from wavesom.visualization.images2gif import writeGif
-from wavesom.experiments.mental_lexicon_bi import transfortho
 from PIL import Image
 
+v = np.array([[0.267004,  0.004874,  0.329415],
+              [0.270595,  0.214069,  0.507052],
+              [0.19943,  0.387607,  0.554642],
+              [0.13777,  0.537492,  0.554906],
+              [0.157851,  0.683765,  0.501686],
+              [0.440137,  0.811138,  0.340967]])
 
-def moviegen(word, fn, to, num_neighbors, s, gen_func, sap, o, orth_vec_len, start_idx=0, end_idx=None):
 
-    if end_idx is None:
-        end_idx = orth_vec_len
+l = ListedColormap(v)
 
-    a = transfortho(word, o, orth_vec_len)
+
+def moviegen(fn, activations, l2w, *, write_words=False):
 
     frames = []
 
-    start = time.time()
-    res = s.activate_values(a, max_depth=to, num=num_neighbors, start_idx=start_idx, end_idx=end_idx)
-    print("Took {0} seconds".format(time.time() - start))
+    size = activations[0].shape[0]
 
-    for x in range(1, to):
+    for idx, x in enumerate(activations):
 
-        b = np.array(list(res.values())[:x]).mean(axis=0)
-
-        f = plt.figure(figsize=(12, 12), dpi=80)
-        gen_func(sap, s.map_dimensions[0], b)
+        f = plt.figure(figsize=(5, 5), dpi=80)
+        plt.imshow(x, extent=[0, x.shape[0], x.shape[1], 0], interpolation=None, vmin=0.0, vmax=1.0)
+        plt.annotate(idx, (1, 1), color='white')
+        if write_words:
+            for idx, words in l2w.items():
+                plt.annotate("\n".join(words), ((idx // size)+.5, (idx % size)+.5), color='white', size=10)
         f.canvas.draw()
         data = np.fromstring(f.canvas.tostring_rgb(), dtype=np.uint8, sep='')
         data = data.reshape(f.canvas.get_width_height()[::-1] + (3,))
         frames.append(Image.fromarray(np.copy(data)))
         plt.close()
 
-    writeGif(fn, images=frames, duration=0.2)
-
+    start = time.time()
+    print("Write")
+    frames[0].save(fn, save_all=True, append_images=frames[1:])
+    print("STOPe: {}".format(time.time() - start))
