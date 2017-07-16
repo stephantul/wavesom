@@ -1,7 +1,7 @@
 import json
 import numpy as np
 
-from wavesom.wavesom import Wavesom, transfortho, show, normalize, softmax, sigmoid, weird_normalize
+from wavesom.wavesom import Wavesom, transfortho, show, normalize, softmax, sigmoid
 from experiments.setup import setup
 from experiments.read_blp import read_blp_format
 
@@ -10,7 +10,7 @@ from collections import defaultdict
 
 if __name__ == "__main__":
 
-    path = "saved_models/bilingual_model_big.json"
+    path = "saved_models/bilingual_model_batch_1.json"
 
     dicto = json.load(open("data/syllable_lexicon.json"))
 
@@ -94,7 +94,7 @@ if __name__ == "__main__":
     states = []
     deltas = []
 
-    '''p = []
+    p = []
     states_arr = []
 
     for word, item in zip(s_, X_orig):
@@ -110,27 +110,12 @@ if __name__ == "__main__":
         states_arr.append(states[-1])
 
     p = sorted(p, key=lambda x: x[0].split()[0])
-    states_arr = np.array(states_arr)'''
+    states_arr = np.array(states_arr)
 
-    for idx in range(1):
-        x, y = s.activate(X_orig[0, :orth_vec_len])
-        states.append(x)
-
-    for idx in range(150):
-
-        x, y = s.activate()
-        states.append(x)
-
-    x_z = sigmoid(s.distance_function(X_orig, s.weights)[0])
+    x_z = sigmoid(s.distance_function(s.weights, X_orig)[0])
 
     from wavesom.visualization.moviegen import moviegen
     print("WRITING")
-    # states = np.array(states)
-    # deltas = np.array(deltas)
-    # p = np.array([normalize((s.cache * x).sum(0)) for x in states])
 
     import cProfile
-    moviegen('drrr.gif', np.array(states).reshape((len(states), 25, 25)).transpose(0, 2, 1), l2w, write_words=False)
-
-    # TODO: Thresholding: count only neurons with activations above threshold? Maybe?
-    # TODO: no?
+    # moviegen('drrr.gif', np.array(states).reshape((len(states), 25, 25)).transpose(0, 2, 1), l2w, write_words=False)

@@ -12,13 +12,8 @@ def sigmoid(x, *, width=1, center=1):
 def normalize(x, *, switch=True):
 
     if switch:
-        x = x - np.min(x)
+        x -= np.min(x)
     return x / np.max(x)
-
-def weird_normalize(x):
-
-    x = x / np.max(x)
-    return 1 - x
 
 def softmax(x):
 
@@ -143,7 +138,7 @@ class Wavesom(Som):
 
         s.weights = weights
         s.trained = True
-        s.cache = np.array([weird_normalize(sigmoid(x)) for x in s._predict_base(s.weights)])
+        s.cache = np.array([sigmoid(x) for x in s._predict_base(s.weights)])
         [s.activate() for x in range(100)]
 
         return s
@@ -210,7 +205,7 @@ class Wavesom(Som):
     def activate(self, x=None):
 
         if x is None:
-            x = np.ones(len(self.weights)) / len(self.weights)
+            x = np.ones(len(self.weights)) * .0
             # x /= len(x)
         else:
             x = sigmoid(self._predict_base_part(x, 0)[0])
