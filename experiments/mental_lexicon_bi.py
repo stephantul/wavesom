@@ -89,7 +89,7 @@ if __name__ == "__main__":
 
         error_rt_vector.append((v[0], rt))
 
-    a, b = error_rt_vector = np.array(error_rt_vector).T
+    a, b = np.array(error_rt_vector).T
 
     states = []
     deltas = []
@@ -109,15 +109,15 @@ if __name__ == "__main__":
     p = sorted(p, key=lambda x: x[0].split()[0])
     states_arr = np.array(states_arr)
 
-    x_z = sigmoid(s.distance_function(s.weights, X_orig)[0])
+    x_z = normalize(s.distance_function(s.weights, X_orig)[0])
     # from wavesom.visualization.moviegen import moviegen
     print("WRITING")
 
     states = []
-    states.extend(s.activate(X_orig[0, :orth_vec_len], iterations=10))
-    states.extend(s.activate(iterations=50))
-    states.extend(s.activate(X_orig[-4, :orth_vec_len], iterations=10))
-    states.extend(s.activate(iterations=50))
+    states.extend(s.activate(X_orig[0, :orth_vec_len], iterations=50))
+    states.extend(s.activate(iterations=10))
+    states.extend(s.activate(X_orig[-4, :orth_vec_len], iterations=50))
+    states.extend(s.activate(iterations=10))
 
     states = np.array(states)
 

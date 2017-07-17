@@ -138,7 +138,7 @@ class Wavesom(Som):
 
         s.weights = weights
         s.trained = True
-        s.cache = np.array([normalize(sigmoid(x)) for x in s._predict_base(s.weights)])
+        s.cache = np.array([normalize(x) for x in s._predict_base(s.weights)])
         # [s.activate() for x in range(100)]
 
         return s
@@ -207,20 +207,15 @@ class Wavesom(Som):
         if x is None:
             x = np.zeros(len(self.weights))
         else:
-            x = sigmoid(self._predict_base_part(x, 0)[0])
+            x = normalize(self._predict_base_part(x, 0)[0])
 
         output = []
 
         for _ in range(iterations):
 
-            state = np.copy(self.state)
-            state += x
-            delta = np.mean(self.cache * state, 0)
-
-            # Dampening
-            self.state += delta * (1.0 - state)
-            # self.state[negative] += delta[negative] * (state[negative])
-            # self.state.clip(0.0, 1.0)
+            delta = (self.state + x) * self.cache
+            self.state -= delta.mean(0)
+            self.state = normalize(self.state)
             output.append(np.copy(self.state))
 
         return output
