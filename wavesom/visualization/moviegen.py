@@ -27,6 +27,8 @@ def moviegen(fn, activations, l2w, *, write_words=False):
 
     size = activations[0].shape[0]
 
+    max_value = activations.max()
+
     for idx, x in enumerate(activations):
 
         f = plt.figure(figsize=(5, 5), dpi=80)

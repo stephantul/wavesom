@@ -96,26 +96,31 @@ if __name__ == "__main__":
 
     p = []
     states_arr = []
+    inv = s.invert_projection(X_orig, [" ".join((x[0], "-".join(x[1]))) for x in s_])
 
     for word, item in zip(s_, X_orig):
 
         word = n = " ".join([word[0], "-".join(word[1])])
-        states = []
-
-        for idx in range(50):
-            x, y = s.activate(item[:orth_vec_len])
-            states.append(x)
-
-        p.append((word, states[-1].argmax(), w2l[word]))
-        states_arr.append(states[-1])
+        x = list(s.activate(item[:orth_vec_len], iterations=50))
+        max_x = x[-1].argmax()
+        p.append((word, max_x, w2l[word], inv[max_x]))
+        states_arr.append(x[-1])
 
     p = sorted(p, key=lambda x: x[0].split()[0])
     states_arr = np.array(states_arr)
 
     x_z = sigmoid(s.distance_function(s.weights, X_orig)[0])
-
-    from wavesom.visualization.moviegen import moviegen
+    # from wavesom.visualization.moviegen import moviegen
     print("WRITING")
 
+    states = []
+    states.extend(s.activate(X_orig[0, :orth_vec_len], iterations=10))
+    states.extend(s.activate(iterations=50))
+    states.extend(s.activate(X_orig[-4, :orth_vec_len], iterations=10))
+    states.extend(s.activate(iterations=50))
+
+    states = np.array(states)
+
     import cProfile
-    # moviegen('drrr.gif', np.array(states).reshape((len(states), 25, 25)).transpose(0, 2, 1), l2w, write_words=False)
+    from wavesom.visualization.moviegen import moviegen
+    moviegen('drrr.gif', np.array(states).reshape((len(states), 25, 25)).transpose(0, 2, 1), l2w, write_words=False)

@@ -138,8 +138,8 @@ class Wavesom(Som):
 
         s.weights = weights
         s.trained = True
-        s.cache = np.array([sigmoid(x) for x in s._predict_base(s.weights)])
-        [s.activate() for x in range(100)]
+        s.cache = np.array([normalize(sigmoid(x)) for x in s._predict_base(s.weights)])
+        # [s.activate() for x in range(100)]
 
         return s
 
@@ -202,17 +202,25 @@ class Wavesom(Som):
         dist = self._predict_base_part(X, offset)
         return self.min_max(dist, axis=1)[1]
 
-    def activate(self, x=None):
+    def activate(self, x=None, iterations=20):
 
         if x is None:
-            x = np.ones(len(self.weights)) * .0
-            # x /= len(x)
+            x = np.zeros(len(self.weights))
         else:
             x = sigmoid(self._predict_base_part(x, 0)[0])
 
-        self.state += x
-        self.state = np.mean(self.cache * self.state, 0)
-        # self.state += s
-        # self.state = normalize(self.state, switch=False)
-        # self.state.clip(min=0.1)
-        return np.copy(self.state), 0
+        output = []
+
+        for _ in range(iterations):
+
+            state = np.copy(self.state)
+            state += x
+            delta = np.mean(self.cache * state, 0)
+
+            # Dampening
+            self.state += delta * (1.0 - state)
+            # self.state[negative] += delta[negative] * (state[negative])
+            # self.state.clip(0.0, 1.0)
+            output.append(np.copy(self.state))
+
+        return output
