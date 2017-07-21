@@ -579,8 +579,6 @@ def writeGif(filename, images, duration=0.1, repeat=True, dither=False,
         xy = [(0,0) for im in images]
         defaultDispose = 2 # Restore to background color.
 
-    print(images)
-
     # Check dispose
     if dispose is None:
         dispose = defaultDispose
@@ -1073,10 +1071,23 @@ class NeuQuant:
 
     def convert(self, *color):
         i = self.inxsearch(*color)
-        return self.colormap[i, :3]
+        return self.colormap[i,:3]
 
     def inxsearch(self, r, g, b):
-        """Search for BGR values 0..255 and return colour index."""
-        dists = (self.colormap[:, :3] - np.array([r, g, b]))
-        a = np.argmin((dists*dists).sum(1))
+        """Search for BGR values 0..255 and return colour index"""
+        dists = (self.colormap[:,:3] - np.array([r,g,b]))
+        a= np.argmin((dists*dists).sum(1))
         return a
+
+
+
+if __name__ == '__main__':
+    im = np.zeros((200,200), dtype=np.uint8)
+    im[10:30,:] = 100
+    im[:,80:120] = 255
+    im[-50:-40,:] = 50
+
+    images = [np.uint8(im*1.0), np.uint8(im*0.8), np.uint8(im*0.6), np.uint8(im*0.4), np.uint8(im*0)]
+    writeGif('test.gif',images, duration=0.5, dither=0)
+
+    print('done')

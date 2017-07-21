@@ -138,8 +138,6 @@ class Wavesom(Som):
 
         s.weights = weights
         s.trained = True
-        s.cache = np.array([normalize(x) for x in s._predict_base(s.weights)])
-        # [s.activate() for x in range(100)]
 
         return s
 
@@ -175,7 +173,7 @@ class Wavesom(Som):
             X = X[np.newaxis, :]
 
         datadim = X.shape[-1]
-        X = self._create_batches(X, batch_size=1)
+        X = self._create_batches(X, batch_size=30)
 
         temp_weights = self.weights[:, offset:offset+datadim]
         distances = []
@@ -202,20 +200,25 @@ class Wavesom(Som):
         dist = self._predict_base_part(X, offset)
         return self.min_max(dist, axis=1)[1]
 
-    def activate(self, x=None, iterations=20):
+    def activate(self, x=None, iterations=20, decay=.95):
 
         if x is None:
-            x = np.zeros(len(self.weights))
+            x = np.zeros((len(self.weights)))
         else:
-            x = normalize(self._predict_base_part(x, 0)[0])
+            x = np.squeeze(np.exp(-self._predict_base_part(x, 0)))
 
         output = []
 
-        for _ in range(iterations):
+        for idx in range(iterations):
 
-            delta = (self.state + x) * self.cache
-            self.state -= delta.mean(0)
-            self.state = normalize(self.state)
+            delta = (self.weights * self.state[:, None]).mean(0)
+            delta = normalize(delta)
+
+            delta = np.exp(np.squeeze(-self._predict_base(delta[None, :])))
+            delta += x
+
+            self.state += (1.0 - self.state) * delta
+            self.state *= decay
             output.append(np.copy(self.state))
 
-        return output
+        return np.array(output)

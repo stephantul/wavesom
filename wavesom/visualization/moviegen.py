@@ -1,12 +1,13 @@
 import matplotlib
 matplotlib.use('Agg')
+
 from matplotlib.colors import ListedColormap
 from .images2gif import writeGif
 
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-import visdom
+from .simple_viz import show_label_activation_map
 
 from PIL import Image
 
@@ -32,11 +33,13 @@ def moviegen(fn, activations, l2w, *, write_words=False):
     for idx, x in enumerate(activations):
 
         f = plt.figure(figsize=(5, 5), dpi=80)
-        plt.imshow(x, extent=[0, x.shape[0], x.shape[1], 0], interpolation=None, vmin=0.0, vmax=1.0)
+        plt.axis([0, activations.shape[1], 0, activations.shape[2]])
+        plt.imshow(x, interpolation='Sinc', vmin=0.0, vmax=1.0)
         plt.annotate(idx, (1, 1), color='white')
         if write_words:
             for idx, words in l2w.items():
                 plt.annotate("\n".join(words), ((idx // size)+.5, (idx % size)+.5), color='white', size=10)
+        plt.show()
         f.canvas.draw()
         data = np.fromstring(f.canvas.tostring_rgb(), dtype=np.uint8, sep='')
         data = data.reshape(f.canvas.get_width_height()[::-1] + (3,))
@@ -45,5 +48,7 @@ def moviegen(fn, activations, l2w, *, write_words=False):
 
     start = time.time()
     print("Write")
-    frames[0].save(fn, save_all=True, append_images=frames[1:])
+    frames[0].save(fn, 'gif', save_all=True, append_images=frames[1:], optimize=False)
+
     print("STOPe: {}".format(time.time() - start))
+    return frames
