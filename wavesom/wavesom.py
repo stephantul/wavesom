@@ -15,6 +15,11 @@ def normalize(x, *, switch=True):
         x -= np.min(x)
     return x / np.max(x)
 
+def inverted_softmax(x):
+
+    x = np.abs(x - max(x))
+    return softmax(x)
+
 def softmax(x):
 
     x = np.exp(x - np.max(x))
@@ -101,7 +106,7 @@ class Wavesom(Som):
 
         self.orth_len = orth_len
         self.phon_len = phon_len
-        self.state = np.random.random(size=len(self.weights)) * .15
+        self.state = np.ones(len(self.weights))
         self.cache = None
 
     @classmethod
@@ -137,6 +142,7 @@ class Wavesom(Som):
                 sigma=sigma)
 
         s.weights = weights
+        s.cache = s._predict_base(s.weights)
         s.trained = True
 
         return s
@@ -200,25 +206,39 @@ class Wavesom(Som):
         dist = self._predict_base_part(X, offset)
         return self.min_max(dist, axis=1)[1]
 
-    def activate(self, x=None, iterations=20, decay=.95):
+    def activate(self, x=None, iterations=20, decay=.7):
 
         if x is None:
             x = np.zeros((len(self.weights)))
         else:
-            x = np.squeeze(np.exp(-self._predict_base_part(x, 0)))
+            x = normalize(np.exp(-np.squeeze(self._predict_base_part(x, 0))))
+            x -= .5
+            x *= .5
 
         output = []
 
         for idx in range(iterations):
 
-            delta = (self.weights * self.state[:, None]).mean(0)
-            delta = normalize(delta)
+            # delta = normalize((self.cache * self.state).mean(0))
+            mask = self.state >= 1
+            if not np.any(mask):
+                mask = np.ones_like(mask).astype(np.bool)
+            p = self.weights[mask] * self.state[mask, None]
+            p = normalize(p.mean(0))
+            p = np.squeeze(self._predict_base(p[None, :]))
+            delta = normalize(np.exp(-p))
 
-            delta = np.exp(np.squeeze(-self._predict_base(delta[None, :])))
+            delta -= .5
+            delta *= .2
+
             delta += x
 
-            self.state += (1.0 - self.state) * delta
-            self.state *= decay
+            pos = delta >= 0
+            neg = delta < 0
+
+            # Do dampening.
+            self.state[pos] += delta[pos] * (1.0 - (self.state[pos] / 2.0))
+            self.state[neg] += delta[neg] * self.state[neg]
             output.append(np.copy(self.state))
 
         return np.array(output)

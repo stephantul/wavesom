@@ -34,7 +34,7 @@ def moviegen(fn, activations, l2w, *, write_words=False):
 
         f = plt.figure(figsize=(5, 5), dpi=80)
         plt.axis([0, activations.shape[1], 0, activations.shape[2]])
-        plt.imshow(x, interpolation='Sinc', vmin=0.0, vmax=1.0)
+        plt.imshow(x, interpolation='Sinc', vmin=0.0, vmax=2.0)
         plt.annotate(idx, (1, 1), color='white')
         if write_words:
             for idx, words in l2w.items():

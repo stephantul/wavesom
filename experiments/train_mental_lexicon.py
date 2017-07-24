@@ -51,7 +51,7 @@ if __name__ == "__main__":
                 'keek', 'leek', 'gek',
                 'creek', 'ziek', 'piek'}
 
-    X, X_orig, s_ = setup(dicto, max_len, wordlist)
+    X, X_orig, s_, w = setup(dicto, max_len, wordlist)
     orth_vec_len = 14 * max_len
 
     start = time.time()
@@ -61,11 +61,11 @@ if __name__ == "__main__":
         with cp.cuda.Device(args.gpu):
             X = cp.asarray(X, cp.float32)
             s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
-            s.fit(X, args.epochs, total_updates=100, batch_size=250, show_progressbar=True, stop_nb_updates=0.5)
+            s.fit(X, args.epochs, total_updates=100, batch_size=1, init_pca=False, show_progressbar=True, stop_nb_updates=0.5)
 
     else:
         print("using CPU")
         s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
-        s.fit(X, args.epochs, total_updates=100, batch_size=250, init_pca=False, show_progressbar=True, stop_nb_updates=0.5)
+        s.fit(X, args.epochs, total_updates=100, batch_size=1, init_pca=False, show_progressbar=True, stop_nb_updates=0.5)
 
     s.save(args.file)

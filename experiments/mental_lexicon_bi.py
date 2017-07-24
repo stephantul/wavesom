@@ -2,8 +2,7 @@ import json
 import numpy as np
 
 from wavesom.wavesom import Wavesom, transfortho, show, normalize, softmax, sigmoid
-from experiments.setup import setup
-from experiments.read_blp import read_blp_format
+from wordkit.construct import construct_pipeline
 
 from collections import defaultdict
 
@@ -11,8 +10,6 @@ from collections import defaultdict
 if __name__ == "__main__":
 
     path = "saved_models/bilingual_model_batch_1.json"
-
-    dicto = json.load(open("data/syllable_lexicon.json"))
 
     max_len = 7
 
@@ -47,80 +44,61 @@ if __name__ == "__main__":
                 'keek', 'leek', 'gek',
                 'creek', 'ziek', 'piek'}
 
-    X, X_orig, s_ = setup(dicto, max_len, wordlist)
-    orth_vec_len = 14 * max_len
+    construct = construct_pipeline()
+    wordlist = list(wordlist)
+    X, words, _, X_orig = construct.fit_transform(wordlist, return_samples=False)
 
     s = Wavesom.load(path, np)
 
     w2l = defaultdict(list)
+    w2l_form = defaultdict(list)
     l2w = defaultdict(set)
     quant = {}
 
-    for n, x, q in zip(s_, s.predict(X_orig), s.quant_error(X_orig)):
-        n = " ".join([n[0], "-".join(n[1])])
+    for n, x, q in zip(words, s.predict(X_orig), s.quant_error(X_orig)):
+        w2l_form[n.split()[0]].append(x)
         w2l[n].append(x)
         l2w[x].add(n)
         quant[n] = q
 
-    unique_ortho = {v[0]: X_orig[idx, :orth_vec_len] for idx, v in enumerate(s_)}
+    unique_ortho = {v.split()[0]: X_orig[idx] for idx, v in enumerate(words)}
 
-    words, vectors = zip(*unique_ortho.items())
+    o_words, vectors = zip(*unique_ortho.items())
     vectors = np.array(vectors)
-
-    predicted_orthography = s._predict_base_part(vectors, 0)
-    sorted_predictions = predicted_orthography.argsort()
-
-    values = []
-
-    for idx, x in enumerate(sorted_predictions):
-        values.append(predicted_orthography[idx, x[:5]])
-
-    x = dict(zip(*[words, values]))
-
-    rt_data = dict(read_blp_format(filename="data/blp-items.txt", words=wordlist))
-
-    error_rt_vector = []
-    for k, v in x.items():
-
-        try:
-            rt = rt_data[k.lower()]
-        except KeyError:
-            print("{} not in RT".format(k))
-
-        error_rt_vector.append((v[0], rt))
-
-    a, b = np.array(error_rt_vector).T
 
     states = []
     deltas = []
 
+    inv = s.invert_projection(X_orig, words)
+    inv_o = s.invert_projection(vectors, o_words)
+
+    scores = {}
+
     p = []
     states_arr = []
-    inv = s.invert_projection(X_orig, [" ".join((x[0], "-".join(x[1]))) for x in s_])
 
-    for word, item in zip(s_, X_orig):
+    for word, item in zip(o_words, vectors):
 
-        word = n = " ".join([word[0], "-".join(word[1])])
-        x = list(s.activate(item[:orth_vec_len], iterations=50))
-        max_x = x[-1].argmax()
-        p.append((word, max_x, w2l[word], inv[max_x]))
-        states_arr.append(x[-1])
+        x = s.activate(item[:s.orth_len], iterations=50)
+        max_x = np.argmax(x[-1])
+        p.append((word, max_x, w2l_form[word], inv_o[max_x]))
+        states_arr.append(np.array(x).max(1))
 
-    p = sorted(p, key=lambda x: x[0].split()[0])
-    states_arr = np.array(states_arr)
+    wrong = [x for idx, x in enumerate(p) if x[0] != x[-1]]
+    score = 1 - (len(wrong) / len(p))
+    states_arr = np.asarray(states_arr)
 
     x_z = normalize(s.distance_function(s.weights, X_orig)[0])
     # from wavesom.visualization.moviegen import moviegen
     print("WRITING")
 
     states = []
-    states.extend(s.activate(X_orig[0, :orth_vec_len], iterations=50))
-    states.extend(s.activate(iterations=10))
-    states.extend(s.activate(X_orig[-4, :orth_vec_len], iterations=50))
-    states.extend(s.activate(iterations=10))
+    s.state[:] = 1.
+    states.extend(s.activate(X_orig[108, :s.orth_len], iterations=10))
+    states.extend(s.activate(X_orig[46, :s.orth_len], iterations=10))
 
     states = np.array(states)
 
-    import cProfile
     from wavesom.visualization.moviegen import moviegen
-    moviegen('drrr.gif', np.array(states).reshape((len(states), 25, 25)).transpose(0, 2, 1), l2w, write_words=False)
+    reshaped = np.array(states).reshape((len(states), 25, 25)).transpose(0, 2, 1)
+    f = moviegen('drrr.gif', reshaped, l2w, write_words=True)
