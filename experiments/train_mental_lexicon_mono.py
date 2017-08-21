@@ -3,7 +3,7 @@ import time
 import argparse
 
 from wavesom.wavesom import Wavesom
-from experiments.setup import setup
+from wordkit.construct import construct_pipeline
 import cupy as cp
 
 

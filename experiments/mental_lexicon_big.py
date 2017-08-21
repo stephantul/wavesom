@@ -9,11 +9,11 @@ from collections import defaultdict
 
 if __name__ == "__main__":
 
-    path = "saved_models/bilingual_model_batch_1.json"
+    path = "saved_models/biling_lots_of_words.json"
 
-    # wordlist = json.load(open("data/words.json"))
+    wordlist = json.load(open("data/words.json"))
 
-    wordlist = {'kind', 'mind', 'bind',
+    '''wordlist = {'kind', 'mind', 'bind',
                 'room', 'wolf', 'way',
                 'wee', 'eten',
                 'wind', 'lead', 'speed',
@@ -42,9 +42,9 @@ if __name__ == "__main__":
                 'mond', 'kei',
                 'steen', 'geen',
                 'leek', 'gek',
-                'creek', 'ziek', 'piek'}
+                'creek', 'ziek', 'piek'}'''
 
-    construct = construct_pipeline()
+    construct = construct_pipeline(corpus_types=(), languages=(), corpus_paths=())
     wordlist = list(wordlist)
     (X_orig, words), () = construct.fit_transform(wordlist)
 
@@ -57,10 +57,8 @@ if __name__ == "__main__":
     w2l_form = defaultdict(list)
     l2w = defaultdict(set)
     quant = {}
-    w2id = defaultdict(list)
 
-    for idx, (n, x, q) in enumerate(zip(words, s.predict(X_orig), s.quant_error(X_orig))):
-        w2id[n.split()[0]].append(idx)
+    for n, x, q in zip(words, s.predict(X_orig), s.quant_error(X_orig)):
         w2l_form[n.split()[0]].append(x)
         w2l[n].append(x)
         l2w[x].add(n)
@@ -84,8 +82,10 @@ if __name__ == "__main__":
 
     for idx, (word, item) in enumerate(zip(words, X_orig)):
 
+        print(idx)
+
         s.state[:] = 1.
-        x = s.converge(item)
+        x = s.activate(item, iterations=1000)
         max_x = np.argmax(x[-1])
         p.append((word.split()[0], max_x, w2l_form[word], inv_o[max_x]))
         states_arr.append(x[-1])
@@ -97,34 +97,27 @@ if __name__ == "__main__":
     states = []
     s.state[:] = 1.
 
-    word_to_converge = np.random.choice(o_words, size=20, replace=True)
-
-    s.activate(X_orig[65, :s.orth_len], iterations=100)
-
-    for word in word_to_converge:
-        print(word)
-        states.append(s.converge(X_orig[w2id[word][0], :s.orth_len]))
+    states.append(s.activate(X_orig[-2, :s.orth_len], iterations=1000))
+    states.append(s.activate(X_orig[49, :s.orth_len], iterations=1000))
+    states.append(s.activate(X_orig[-2, :s.orth_len], iterations=1000))
 
     states = np.array(states)
-    # states = states[~(np.arange(len(states)) % 100).astype(bool)]
+    states = states[~(np.arange(len(states)) % 100).astype(bool)]
     # print(len(states))
 
     from sklearn.decomposition import PCA
     from scipy.spatial import Voronoi, voronoi_plot_2d
     from matplotlib import pyplot as plt
-    p = PCA(n_components=2)
+    p = PCA(n_components=2, whiten=False)
     states_transformed = p.fit_transform(states_arr)
 
+    f = plt.figure()
     v = Voronoi(states_transformed)
     voronoi_plot_2d(v, show_vertices=False, show_points=False)
     for idx, (x, y) in enumerate(states_transformed):
-        if words[idx].split()[0] in word_to_converge:
-            plt.text(x, y, words[idx], fontsize=5)
+        plt.text(x, y, words[idx], fontsize=5)
 
-    colors = [(((.5 / (len(words) - 1)) * x)) for x in range(len(words))]
-    colors = np.vstack([colors, colors, colors]) + .5
-    colors = (colors.T * 255).round(0).astype(int)
-    colors = ["#{0}{1}{2}".format(hex(x)[-2:], hex(y)[-2:], hex(z)[-2:]) for x, y, z in colors]
+    colors = ['red', 'green', 'blue']
 
     for idx, a in enumerate(states):
         trajectory = p.transform(a)

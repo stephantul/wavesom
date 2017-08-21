@@ -3,7 +3,7 @@ import time
 import argparse
 
 from wavesom.wavesom import Wavesom
-from experiments.setup import setup
+from wordkit.construct import construct_pipeline
 import cupy as cp
 
 
@@ -16,11 +16,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, help="The number of epochs to train", default=100)
     args = parser.parse_args()
 
-    dicto = json.load(open("data/syllable_lexicon.json"))
-
-    max_len = 7
-
-    wordlist = {'kind', 'mind', 'bind',
+    '''wordlist = {'kind', 'mind', 'bind',
                 'room', 'wolf', 'way',
                 'wee', 'eten', 'eating',
                 'wind', 'lead', 'speed',
@@ -49,10 +45,15 @@ if __name__ == "__main__":
                 'bied', 'mond', 'kei',
                 'steen', 'meen', 'geen',
                 'keek', 'leek', 'gek',
-                'creek', 'ziek', 'piek'}
+                'creek', 'ziek', 'piek'}'''
 
-    X, X_orig, s_, w = setup(dicto, max_len, wordlist)
-    orth_vec_len = 14 * max_len
+    wordlist = json.load(open("data/shared_vocab.json"))
+    wordlist = {x.upper() for x in wordlist if "-" not in x}
+
+    construct = construct_pipeline(num_exemplars=1000, sample=100000)
+    orth_len = construct.stages[-1][1].transformer_list[0][1].vec_len
+    wordlist = list(wordlist)
+    (X, samples), (X_orig, words) = construct.fit_transform(wordlist)
 
     start = time.time()
 
@@ -60,12 +61,12 @@ if __name__ == "__main__":
         print("using GPU {}".format(args.gpu))
         with cp.cuda.Device(args.gpu):
             X = cp.asarray(X, cp.float32)
-            s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
+            s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_len, phon_len=X.shape[1] - 98)
             s.fit(X, args.epochs, total_updates=100, batch_size=1, init_pca=False, show_progressbar=True, stop_nb_updates=0.5)
 
     else:
         print("using CPU")
-        s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_vec_len, phon_len=X.shape[1] - orth_vec_len)
+        s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_len, phon_len=X.shape[1] - 98)
         s.fit(X, args.epochs, total_updates=100, batch_size=1, init_pca=False, show_progressbar=True, stop_nb_updates=0.5)
 
     s.save(args.file)

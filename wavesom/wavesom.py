@@ -1,84 +1,10 @@
 import numpy as np
 import json
+import cupy as cp
+from tqdm import tqdm
 
 from somber import Som
 from somber.utils import expo, linear, np_min
-from collections import defaultdict
-
-
-def sigmoid(x, *, width=1, center=1):
-    return 1 / (1+np.exp(width*(x-center)))
-
-def normalize(x, *, switch=True):
-
-    if switch:
-        x -= np.min(x)
-    return x / np.max(x)
-
-def inverted_softmax(x):
-
-    x = np.abs(x - max(x))
-    return softmax(x)
-
-def softmax(x):
-
-    x = np.exp(x - np.max(x))
-    return x / x.sum()
-
-
-def show(stimulus, orthographizer, wavesom, sap, depth=5, num=3):
-    """
-    Show the response of the map to some stimulus.
-
-    :param stimulus: The input stimulus as a string.
-    :param orthographizer: The orthographizer used to encode the input stimulus.
-    :param wavesom: The trained wavesom.
-    :param sap: The word2idx dictionary, for visualization.
-    :param depth: The depth to descend in the tree.
-    :param num: The number of neighbors to consider in the computation.
-    :return: None
-    """
-    # Imports
-    from wavesom.visualization.simple_viz import show_label_activation_map
-    import matplotlib.pyplot as plt
-
-    # Close previous plot
-    plt.close()
-
-    # Transform the stimulus to a vector.
-    a = transfortho(stimulus, orthographizer, wavesom.orth_len)
-    # Show the map's response to the stimulus
-    show_label_activation_map(sap, wavesom.map_dimensions[0], wavesom.activate_state(a, max_depth=depth, num=num).reshape(wavesom.map_dimensions).T)
-
-
-def evaluate(pas_dict, s, o):
-
-    results = []
-    words = []
-
-    for k, v in pas_dict.items():
-        words.append(k)
-        results.append(s.predict_part(transfortho(k, o, orth_vec_len), 0)[0:] in v)
-
-    return results, words
-
-
-def dist_to_lexicon(vec, lexicon, X, num_to_return=5):
-
-    lex = np.array(lexicon)
-    dists = np.sum(np.square(X - vec), axis=1)
-    s = np.argsort(dists)[:num_to_return]
-
-    return lex[s], dists[s]
-
-
-def transfortho(x, o, length):
-
-    zero = np.zeros((length,))
-    vec = o.vectorize(x).ravel()
-    zero[:len(vec)] += vec
-
-    return zero
 
 
 class Wavesom(Som):
@@ -166,30 +92,31 @@ class Wavesom(Som):
 
         json.dump(dicto, open(path, 'w'))
 
-    def _predict_base_part(self, X, offset):
+    def _predict_base_part(self,
+                           X,
+                           offset,
+                           batch_size=1,
+                           show_progressbar=False):
         """
         Compute the prediction for part of the weights, specified by an offset.
 
         :param X: The input data
         :param offset: The offset which is applied to axis 1 of X
-        :return: An matrix containing the distance of each sample to
+        :return: A matrix containing the distance of each sample to
         each weight.
         """
-        if len(X.shape) == 1:
-            X = X[np.newaxis, :]
+        xp = cp.get_array_module()
+        batched = self._create_batches(X, batch_size, shuffle_data=False)
 
-        datadim = X.shape[-1]
-        X = self._create_batches(X, batch_size=30)
+        activations = []
+        temp_weights = self.weights[:, offset:(offset+X.shape[1])]
 
-        temp_weights = self.weights[:, offset:offset+datadim]
-        distances = []
+        for x in tqdm(batched, disable=not show_progressbar):
+            activations.extend(self.distance_function(x, temp_weights)[0])
 
-        for x in X:
-
-            distance = self.distance_function(x, weights=temp_weights)[0]
-            distances.extend(distance)
-
-        return np.array(distances)
+        activations = xp.asarray(activations, dtype=xp.float32)
+        activations = activations[:X.shape[0]]
+        return activations.reshape(X.shape[0], self.weight_dim)
 
     def predict_part(self, X, offset, orth_vec_len=0):
         """
@@ -206,38 +133,61 @@ class Wavesom(Som):
         dist = self._predict_base_part(X, offset)
         return self.min_max(dist, axis=1)[1]
 
-    def activate(self, x=None, iterations=20, decay=.7):
+    def statify(self):
+        """
+        Realize the current state vector as an exemplar.
+        """
+        p = (self.weights * self.state[:, None]).mean(0)
+        return p
 
+    def flow(self, x):
+        """
+        Shoot an input through the network.
+
+        :param x: The input datum.
+        :return: An activation.
+        """
+        x = np.exp(-np.squeeze(self._predict_base_part(x[None, :], 0)))
+        x -= (x.mean() + x.std())
+        return x
+
+    def converge(self, x, start_iter=10, max_iter=1000, tol=0.001):
+
+        output = []
+        output.append(self.activate(x, iterations=1))
+
+        idx = 0
+        for _ in range(max_iter):
+            s = self.activate(x, iterations=1)
+            if np.abs(np.sum(s[0] - output[-1])) < tol:
+                break
+            output.append(s)
+        return np.squeeze(output)
+
+    def activate(self, x=None, iterations=20):
+        """
+        Activate the network.
+        """
         if x is None:
             x = np.zeros((len(self.weights)))
         else:
-            x = normalize(np.exp(-np.squeeze(self._predict_base_part(x, 0))))
-            x -= .5
-            x *= .5
+            x = self.flow(x)
 
         output = []
 
         for idx in range(iterations):
 
-            # delta = normalize((self.cache * self.state).mean(0))
-            mask = self.state >= 1
-            if not np.any(mask):
-                mask = np.ones_like(mask).astype(np.bool)
-            p = self.weights[mask] * self.state[mask, None]
-            p = normalize(p.mean(0))
-            p = np.squeeze(self._predict_base(p[None, :]))
-            delta = normalize(np.exp(-p))
-
-            delta -= .5
-            delta *= .2
-
-            delta += x
-
+            p = self.flow(self.statify())
+            delta = x + p
             pos = delta >= 0
             neg = delta < 0
 
+            # The ceiling is set at 2.0
+            # This term ensures that updates get smaller as
+            # activation approaches the ceiling.
+            ceiling = (1.0 - (self.state[pos] / 2.))
             # Do dampening.
-            self.state[pos] += delta[pos] * (1.0 - (self.state[pos] / 2.0))
+            self.state[pos] += delta[pos] * ceiling
             self.state[neg] += delta[neg] * self.state[neg]
             output.append(np.copy(self.state))
 
