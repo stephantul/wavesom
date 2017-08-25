@@ -2,7 +2,12 @@ import json
 import numpy as np
 
 from wavesom.wavesom import Wavesom
-from wordkit.construct import construct_pipeline
+from wordkit.construct import WordkitPipeline
+from wordkit.readers import Celex
+from wordkit.transformers import ONCTransformer, OrthographyTransformer
+from wordkit.feature_extraction.features import fourteen, patpho_bin
+from wordkit.feature_extraction import binary_character_features, phoneme_features
+from sklearn.pipeline import FeatureUnion
 
 from collections import defaultdict
 
@@ -44,7 +49,18 @@ if __name__ == "__main__":
                 'leek', 'gek',
                 'creek', 'ziek', 'piek'}
 
-    construct = construct_pipeline()
+    o = OrthographyTransformer(binary_character_features(fourteen))
+    vowels, consonants = phoneme_features(patpho_bin)
+    p = ONCTransformer(vowels, consonants)
+
+    transformers = ("t", FeatureUnion([("o", o), ("p", p)]))
+
+    c_d = Celex("data/dpl.cd", language='dutch')
+    c_e = Celex("data/epl.cd")
+
+    corpora = ("corpora", FeatureUnion([("d", c_d), ("e", c_e)]))
+
+    construct = WordkitPipeline(stages=(corpora, transformers))
     wordlist = list(wordlist)
     (X_orig, words), () = construct.fit_transform(wordlist)
 
@@ -97,7 +113,7 @@ if __name__ == "__main__":
     states = []
     s.state[:] = 1.
 
-    word_to_converge = np.random.choice(o_words, size=20, replace=True)
+    word_to_converge = np.random.choice(o_words, size=5, replace=True)
 
     s.activate(X_orig[65, :s.orth_len], iterations=100)
 
@@ -112,6 +128,7 @@ if __name__ == "__main__":
     from sklearn.decomposition import PCA
     from scipy.spatial import Voronoi, voronoi_plot_2d
     from matplotlib import pyplot as plt
+
     p = PCA(n_components=2)
     states_transformed = p.fit_transform(states_arr)
 
@@ -121,10 +138,12 @@ if __name__ == "__main__":
         if words[idx].split()[0] in word_to_converge:
             plt.text(x, y, words[idx], fontsize=5)
 
-    colors = [(((.5 / (len(words) - 1)) * x)) for x in range(len(words))]
+    '''colors = [(((.5 / (len(words) - 1)) * x)) for x in range(len(words))]
     colors = np.vstack([colors, colors, colors]) + .5
     colors = (colors.T * 255).round(0).astype(int)
-    colors = ["#{0}{1}{2}".format(hex(x)[-2:], hex(y)[-2:], hex(z)[-2:]) for x, y, z in colors]
+    colors = ["#{0}{1}{2}".format(hex(x)[-2:], hex(y)[-2:], hex(z)[-2:]) for x, y, z in colors'''
+
+    colors = ['red', 'green', 'blue', 'purple', 'orange']
 
     for idx, a in enumerate(states):
         trajectory = p.transform(a)
