@@ -55,13 +55,17 @@ if __name__ == "__main__":
 
     transformers = ("t", FeatureUnion([("o", o), ("p", p)]))
 
-    c_d = Celex("data/dpl.cd", language='dutch', merge_duplicates=True)
-    c_e = Celex("data/epl.cd", merge_duplicates=True)
+    # c_d = Celex("data/dpl.cd", language='dutch', merge_duplicates=True)
+    # c_e = Celex("data/epl.cd", merge_duplicates=True)
+
+    # corpora = ("corpora", FeatureUnion([("d", c_d), ("e", c_e)]))
 
     construct = WordkitPipeline(stages=(transformers,))
-    (X_orig, words), () = construct.fit_transform(wordlist)
+    wordlist = list(wordlist)
+    (X_orig, words), _ = construct.fit_transform(wordlist)
 
-    words = [" ".join((x["orthography"], "-".join(x["syllables"]))) for x in words]
+    X_orig, idxes = np.unique(X_orig, axis=0, return_index=True)
+    words = [" ".join((x['orthography'], "-".join(x['syllables']))) for x in np.array(words)[idxes]]
 
     s = Wavesom.load(path, np)
     s.orth_len = construct.stages[-1][1].transformer_list[0][1].vec_len
@@ -92,7 +96,7 @@ if __name__ == "__main__":
 
     scores = {}
 
-    results = []
+    '''results = []
     states_arr = []
 
     for idx, (word, item) in enumerate(zip(words, X_orig)):
@@ -102,19 +106,35 @@ if __name__ == "__main__":
         max_x = np.argmax(x[-1])
         results.append((word.split()[0], max_x, w2l_form[word.split()[0]], inv_o[max_x], len(x)))
         states_arr.append(x[-1])
-
     wrong = [x for idx, x in enumerate(results) if x[0] != x[-2] and x[1] not in x[2]]
     score = 1 - (len(wrong) / len(results))
     states_arr = np.asarray(states_arr)
+
+    np.save(open("data/states_arr_big_amlap.npy", 'wb'), states_arr)'''
+
+    '''states_arr_o = []
+
+    for idx, (word, item) in enumerate(zip(o_words, vectors)):
+
+        s.state[:] = 1.
+        x = s.converge(item[:o.vec_len], max_iter=10000)
+        max_x = np.argmax(x[-1])
+        states_arr_o.append(x[-1])
+
+    states_arr_o = np.asarray(states_arr_o)
+
+    np.save(open("data/states_arr_big_o_amlap.npy", 'wb'), states_arr_o)'''
+
+    states_arr = np.load(open("data/states_arr_big_amlap.npy", 'rb'))
+    states_arr_o = np.load(open("data/states_arr_big_o_amlap.npy", 'rb'))
 
     states = []
     s.state[:] = 1.
 
     # word_to_converge = np.random.choice(o_words, size=5, replace=True)
-    word_to_converge = [o_words[o_words.index("wind")],
-                        o_words[o_words.index("reign")],
-                        o_words[o_words.index("feign")],
-                        o_words[o_words.index("wine")]]
+    word_to_converge = [o_words[o_words.index("kind")],
+                        o_words[o_words.index("wind")],
+                        o_words[o_words.index("dine")]]
 
     s.activate(X_orig[65, :s.orth_len], iterations=1000)
 
@@ -134,10 +154,11 @@ if __name__ == "__main__":
     states_transformed = p.fit_transform(states_arr)
 
     v = Voronoi(states_transformed)
+    f = plt.figure(figsize=(50, 50))
     voronoi_plot_2d(v, show_vertices=False, show_points=False)
     for idx, (x, y) in enumerate(states_transformed):
-        if words[idx].split()[0] in word_to_converge:
-            plt.text(x, y, words[idx], fontsize=5)
+        # if words[idx].split()[0] in word_to_converge:
+        plt.text(x, y, words[idx], fontsize=5)
 
     '''colors = [(((.5 / (len(words) - 1)) * x)) for x in range(len(words))]
     colors = np.vstack([colors, colors, colors]) + .5
@@ -154,47 +175,6 @@ if __name__ == "__main__":
 
         for x0, y0, x1, y1 in ttt:
             plt.plot((x0, x1), (y0, y1), colors[idx % len(colors)])
-
+    plt.axis('off')
+    # plt.savefig("temp.png")
     # plt.close()
-
-    '''# PICTURE FOR AMLAP STUFF
-    import matplotlib as mpl
-
-    teal = mpl.colors.LinearSegmentedColormap.from_list('my_cmap2', ['white', 'teal'], 256)
-    teal._init()
-    gree = mpl.colors.LinearSegmentedColormap.from_list('my_cmap2', ['white', 'green'], 256)
-    gree._init()
-    yell = mpl.colors.LinearSegmentedColormap.from_list('my_cmap2', ['white', 'orange'], 256)
-    yell._init()
-    pink = mpl.colors.LinearSegmentedColormap.from_list('my_cmap2', ['white', 'purple'], 256)
-    pink._init()
-
-    alphas = np.linspace(0, 1.0, teal.N+3)
-    teal._lut[:, -1] = alphas
-    gree._lut[:, -1] = alphas
-    yell._lut[:, -1] = alphas
-    pink._lut[:, -1] = alphas
-
-    fig = plt.figure(figsize=(50, 50))
-    plt.imshow(states_arr[71].reshape(25, 25), cmap=teal, interpolation=None)
-    plt.axis('off')
-    fig.savefig("test_fig_reign.png", bbox_inches='tight', transparent=True)
-
-    fig = plt.figure(figsize=(50, 50))
-    plt.imshow(states_arr[91].reshape(25, 25), cmap=gree, interpolation=None)
-    plt.axis('off')
-    fig.savefig("test_fig_feign.png", bbox_inches='tight', transparent=True)
-
-    fig = plt.figure(figsize=(50, 50))
-    plt.imshow(states_arr[106].reshape(25, 25), cmap=yell, interpolation=None)
-    plt.axis('off')
-    fig.savefig("test_fig_wind.png", bbox_inches='tight', transparent=True)
-
-    fig = plt.figure(figsize=(50, 50))
-    plt.imshow(states_arr[107].reshape(25, 25), cmap=pink, interpolation=None)
-    plt.axis('off')
-    fig.savefig("test_fig_waind.png", bbox_inches='tight', transparent=True)
-
-    #from wavesom.visualization.moviegen import moviegen
-    #reshaped = np.array(states).reshape((len(states), 10, 10)).transpose(0, 2, 1)
-    #f = moviegen('drrr.gif', reshaped, l2w, write_words=False)'''
