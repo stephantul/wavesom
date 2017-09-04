@@ -1,0 +1,5 @@
+tqdm==4.14.0
+cupy.egg==info
+numpy==1.13.0
+cupy==2.0.0b1
+somber==1.1.0
