@@ -1,3 +1,4 @@
+"""Code for the Time-dependent Wavesom."""
 import numpy as np
 import json
 import cupy as cp
@@ -8,6 +9,7 @@ from somber.utils import expo, linear, np_min
 
 
 class Wavesom(Som):
+    """A Time-Dependent SOM."""
 
     def __init__(self,
                  map_dim,
@@ -19,9 +21,7 @@ class Wavesom(Som):
                  nbfunc=expo,
                  sigma=None,
                  min_max=np_min):
-        """
-        initialize a Wavesom
-        """
+
         super().__init__(map_dim,
                          dim,
                          learning_rate,
@@ -33,7 +33,6 @@ class Wavesom(Som):
         self.orth_len = orth_len
         self.phon_len = phon_len
         self.state = np.ones(len(self.weights))
-        self.cache = None
 
     @classmethod
     def load(cls, path, array_type=np):
@@ -68,7 +67,6 @@ class Wavesom(Som):
                 sigma=sigma)
 
         s.weights = weights
-        s.cache = s._predict_base(s.weights)
         s.trained = True
 
         return s
@@ -101,7 +99,8 @@ class Wavesom(Som):
         Compute the prediction for part of the weights, specified by an offset.
 
         :param X: The input data
-        :param offset: The offset which is applied to axis 1 of X
+        :param offset: The offset which is applied to axis 1 of X before
+        calculating similarity.
         :return: A matrix containing the distance of each sample to
         each weight.
         """
@@ -118,31 +117,34 @@ class Wavesom(Som):
         activations = activations[:X.shape[0]]
         return activations.reshape(X.shape[0], self.weight_dim)
 
-    def predict_part(self, X, offset, orth_vec_len=0):
+    def predict_part(self, X, offset, vec_length=0):
         """
         Predict BMUs based on part of the weights.
 
-        :param X:
-        :param offset:
-        :param orth_vec_len:
+        :param X: The input data.
+        :param offset: The offset which is applied to axis 1 of X before
+        calculating similarity.
+        :param orth_vec_len: The length of the vector over which similarity
+        is calculated.
         :return:
         """
-        if orth_vec_len:
-            X = X[:, :orth_vec_len]
+        if vec_length:
+            X = X[:, :vec_length]
 
         dist = self._predict_base_part(X, offset)
         return self.min_max(dist, axis=1)[1]
 
     def statify(self):
-        """
-        Realize the current state vector as an exemplar.
-        """
+        """Extract the current state vector as an exemplar."""
         p = (self.weights * self.state[:, None]).mean(0)
         return p
 
-    def flow(self, x):
+    def activation_function(self, x):
         """
-        Shoot an input through the network.
+        Generate an activation given some input.
+
+        The activation function returns an n-dimensional vector between 0
+        and 1, where values closer to 1 imply more similarity.
 
         :param x: The input datum.
         :return: An activation.
@@ -151,33 +153,49 @@ class Wavesom(Som):
         x -= (x.mean() + x.std())
         return x
 
-    def converge(self, x, start_iter=10, max_iter=1000, tol=0.001):
+    def converge(self, x, max_iter=1000, tol=0.001):
+        """
+        Run activations until convergence.
 
+        Convergence is specified as the point when the difference between
+        the state vector in the current step and the previous step is closer
+        than the tolerance.
+
+        :param x: The input.
+        :param max_iter: The maximum iterations to run for.
+        :param tol: The tolerance threshold.
+        :return: A 2D array, containing the states the system moved through
+        while converging.
+        """
         output = []
-        output.append(self.activate(x, iterations=1))
 
-        idx = 0
-        for _ in range(max_iter):
+        for idx in range(max_iter):
             s = self.activate(x, iterations=1)
-            if np.abs(np.sum(s[0] - output[-1])) < tol:
+            if idx != 0 and np.abs(np.sum(s[0] - output[-1])) < tol:
                 break
             output.append(s)
+        if np.array(output).ndim == 2:
+            return output
         return np.squeeze(output)
 
     def activate(self, x=None, iterations=20):
         """
-        Activate the network.
+        Activate the network for a number of iterations.
+
+        :param x: The input, can be None, in which case the systrm oscillates.
+        :param iterations: The number of iterations for which to run.
+        :return: A 2D array, containing the states the system moved through
         """
         if x is None:
             x = np.zeros((len(self.weights)))
         else:
-            x = self.flow(x)
+            x = self.activate(x)
 
         output = []
 
         for idx in range(iterations):
 
-            p = self.flow(self.statify())
+            p = self.activate(self.statify())
             delta = x + p
             pos = delta >= 0
             neg = delta < 0

@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
 
-    wordlist = {'kind', 'mind', 'bind',
+    '''wordlist = {'kind', 'mind', 'bind',
                 'room', 'wolf', 'way',
                 'wee', 'eten', 'eating',
                 'wind', 'lead', 'speed',
@@ -55,7 +55,7 @@ if __name__ == "__main__":
                 'bied', 'mond', 'kei',
                 'steen', 'meen', 'geen',
                 'keek', 'leek', 'gek',
-                'creek', 'ziek', 'piek'}
+                'creek', 'ziek', 'piek'}'''
 
     wordlist = json.load(open("data/shared_vocab.json"))
     wordlist = {x.lower() for x in wordlist if "-" not in x}
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     c_e = Celex("data/epl.cd", merge_duplicates=True)
 
     corpora = ("corpora", FeatureUnion([("d", c_d), ("e", c_e)]))
-    s = Sampler(num_samples=10000, include_all=True)
+    s = Sampler(num_samples=50000, include_all=True)
 
     construct = WordkitPipeline(stages=(corpora, transformers), sampler=s)
     (X, samples), (X_orig, words) = construct.fit_transform(wordlist, strict=False)
