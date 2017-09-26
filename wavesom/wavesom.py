@@ -5,30 +5,41 @@ import cupy as cp
 from tqdm import tqdm
 
 from somber import Som
-from somber.utils import expo, linear, np_min
+from somber.components.utilities import expo
 
 
 class Wavesom(Som):
     """A Time-Dependent SOM."""
 
+    # Static property names
+    param_names = {'neighborhood',
+                   'learning_rate',
+                   'map_dimensions',
+                   'weights',
+                   'data_dimensionality',
+                   'lrfunc',
+                   'nbfunc',
+                   'valfunc',
+                   'argfunc',
+                   'orth_len',
+                   'phon_len'}
+
     def __init__(self,
-                 map_dim,
-                 dim,
+                 map_dimensions,
+                 data_dimensionality,
                  learning_rate,
                  orth_len,
                  phon_len,
                  lrfunc=expo,
                  nbfunc=expo,
-                 sigma=None,
-                 min_max=np_min):
+                 neighborhood=None):
 
-        super().__init__(map_dim,
-                         dim,
+        super().__init__(map_dimensions,
+                         data_dimensionality,
                          learning_rate,
                          lrfunc,
                          nbfunc,
-                         sigma,
-                         min_max)
+                         neighborhood)
 
         self.orth_len = orth_len
         self.phon_len = phon_len
@@ -47,54 +58,29 @@ class Wavesom(Som):
 
         weights = data['weights']
         weights = array_type.asarray(weights, dtype=np.float32)
-        datadim = weights.shape[1]
 
-        dimensions = data['dimensions']
         lrfunc = expo if data['lrfunc'] == 'expo' else linear
         nbfunc = expo if data['nbfunc'] == 'expo' else linear
-        lr = data['lr']
-        sigma = data['sigma']
-        orth_len = data['orth_len']
-        phon_len = data['orth_len']
 
-        s = cls(dimensions,
-                datadim,
-                lr,
-                orth_len,
-                phon_len,
+        s = cls(data['map_dimensions'],
+                data['data_dimensionality'],
+                data['learning_rate'],
+                data['orth_len'],
+                data['phon_len'],
                 lrfunc=lrfunc,
                 nbfunc=nbfunc,
-                sigma=sigma)
+                neighborhood=data['neighborhood'])
 
         s.weights = weights
         s.trained = True
 
         return s
 
-    def save(self, path):
-        """
-        Save a wavesom.
-
-        :param path: The path to save the lexisom to.
-        :return: None
-        """
-        dicto = {}
-        dicto['weights'] = [[float(w) for w in x] for x in self.weights]
-        dicto['dimensions'] = self.map_dimensions
-        dicto['lrfunc'] = 'expo' if self.lrfunc == expo else 'linear'
-        dicto['nbfunc'] = 'expo' if self.nbfunc == expo else 'linear'
-        dicto['lr'] = self.learning_rate
-        dicto['sigma'] = self.sigma
-        dicto['orth_len'] = self.orth_len
-        dicto['phon_len'] = self.phon_len
-
-        json.dump(dicto, open(path, 'w'))
-
-    def _predict_base_part(self,
-                           X,
-                           offset,
-                           batch_size=1,
-                           show_progressbar=False):
+    def predict_distance_part(self,
+                              X,
+                              offset,
+                              batch_size=1,
+                              show_progressbar=False):
         """
         Compute the prediction for part of the weights, specified by an offset.
 
@@ -131,8 +117,8 @@ class Wavesom(Som):
         if vec_length:
             X = X[:, :vec_length]
 
-        dist = self._predict_base_part(X, offset)
-        return self.min_max(dist, axis=1)[1]
+        dist = self.predict_distance_part(X, offset)
+        return dist.__getattr__(self.argfunc)(axis=1)
 
     def statify(self):
         """Extract the current state vector as an exemplar."""
@@ -149,7 +135,7 @@ class Wavesom(Som):
         :param x: The input datum.
         :return: An activation.
         """
-        x = np.exp(-np.squeeze(self._predict_base_part(x[None, :], 0)))
+        x = np.exp(-np.squeeze(self.predict_distance_part(x[None, :], 0)))
         x -= (x.mean() + x.std())
         return x
 
@@ -173,10 +159,11 @@ class Wavesom(Som):
             s = self.activate(x, iterations=1)
             if idx != 0 and np.abs(np.sum(s[0] - output[-1])) < tol:
                 break
-            output.append(s)
-        if np.array(output).ndim == 2:
-            return output
-        return np.squeeze(output)
+            output.append(np.squeeze(s))
+        output = np.array(output)
+        if output.ndim == 1:
+            return output[None, :]
+        return output
 
     def activate(self, x=None, iterations=20):
         """
@@ -189,13 +176,13 @@ class Wavesom(Som):
         if x is None:
             x = np.zeros((len(self.weights)))
         else:
-            x = self.activate(x)
+            x = self.activation_function(x)
 
         output = []
 
         for idx in range(iterations):
 
-            p = self.activate(self.statify())
+            p = self.activation_function(self.statify())
             delta = x + p
             pos = delta >= 0
             neg = delta < 0
