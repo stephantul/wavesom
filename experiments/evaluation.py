@@ -25,10 +25,11 @@ def evaluate_symbolic(s, words, vectors, inverted_mapping):
 
 def evaluate_distributed(states_full, states_orthographic, words, o_words):
 
-    for x in range(0, len(states_orthographic), 250):
+    best_match = []
 
+    for x in range(0, len(states_orthographic), 250):
         sub = states_orthographic[x:x+250, None, :] - states_full[None, :, :]
-        best_match = np.linalg.norm(sub, axis=2).argmin(1)
+        best_match.extend(np.linalg.norm(sub, axis=2).argmin(1))
 
     results = []
 

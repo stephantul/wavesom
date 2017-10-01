@@ -4,11 +4,10 @@ import argparse
 import logging
 
 from wavesom.wavesom import Wavesom
-from wordkit.construct import WordkitPipeline
 from wordkit.readers import Celex
-from wordkit.transformers import ONCTransformer, OrthographyTransformer
+from wordkit.transformers import ONCTransformer, LinearTransformer
 from wordkit.feature_extraction.features import fourteen, binary_features
-from wordkit.feature_extraction import binary_character_features, phoneme_features
+from wordkit.feature_extraction import phoneme_features
 from wordkit.samplers import Sampler
 from sklearn.pipeline import FeatureUnion
 
@@ -22,58 +21,67 @@ if __name__ == "__main__":
     parser.add_argument("--file", type=str, help="The path to save the trained model to")
     parser.add_argument("--dim", type=int, help="The map dimensionality", default=30)
     parser.add_argument("--epochs", type=int, help="The number of epochs to train", default=100)
+    parser.add_argument("--batch", type=int, help="The batch size", default=1)
+    parser.add_argument("--neighborhood", type=float, help="When to stop the neighborhood", default=1.0)
+    parser.add_argument("--log", type=int, help="Whether to use log scaling", default=1)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
 
     wordlist = {'kind', 'mind', 'bind',
                 'room', 'wolf', 'way',
-                'wee', 'eten', 'eating',
+                'wee', 'eten',
                 'wind', 'lead', 'speed',
                 'meat', 'meet', 'meten',
                 'spring', 'winter', 'spel',
-                'speel', 'spill', 'spoon',
+                'spill', 'spoon',
                 'moon', 'boon', 'doen',
                 'biet', 'beat', 'spijt',
                 'tijd', 'mijt', 'klein',
                 'fijn', 'rein', 'reign',
                 'feign', 'fine', 'mine',
                 'dine', 'wine', 'wijn',
-                'weinig', 'speel', 'meel',
+                'weinig', 'meel',
                 'keel', 'veel', 'kiel',
                 'wiel', 'wheel', 'feel',
                 'deal', 'spool', 'spoel',
                 'trol', 'troll', 'wolf',
                 'rond', 'mond', 'mound',
                 'hound', 'found', 'find',
-                'lined', 'spine', 'mine',
-                'cake', 'keek', 'leem',
+                'spine', 'mine',
+                'cake', 'leem',
                 'dessert', 'desert', 'model',
                 'curve', 'dies', 'nies', 'vies',
                 'boot', 'potent', 'sate',
                 'tree', 'rapport', 'lied',
-                'bied', 'mond', 'kei',
-                'steen', 'meen', 'geen',
-                'keek', 'leek', 'gek',
+                'mond', 'kei',
+                'steen', 'geen',
+                'leek', 'gek',
                 'creek', 'ziek', 'piek'}
 
-    wordlist = json.load(open("data/shared_vocab.json"))
-    wordlist = {x.lower() for x in wordlist if "-" not in x}
+    # wordlist = json.load(open("data/shared_vocab.json"))
+    # wordlist = {x.lower() for x in wordlist if "-" not in x}
 
-    o = OrthographyTransformer(binary_character_features(fourteen))
-    vowels, consonants = phoneme_features(binary_features)
-    p = ONCTransformer(vowels, consonants)
+    o = LinearTransformer(fourteen)
+    p = ONCTransformer(phoneme_features(binary_features))
 
-    transformers = ("t", FeatureUnion([("o", o), ("p", p)]))
+    transformers = FeatureUnion([("o", o), ("p", p)])
 
-    c_d = Celex("data/dpl.cd", language='dutch', merge_duplicates=True)
-    c_e = Celex("data/epl.cd", merge_duplicates=True)
+    c_d = Celex("data/dpl.cd", language='nld', merge_duplicates=True)
+    c_e = Celex("data/epl.cd", language='eng', merge_duplicates=True)
 
-    corpora = ("corpora", FeatureUnion([("d", c_d), ("e", c_e)]))
-    s = Sampler(num_samples=10000, include_all=True)
+    corpora = FeatureUnion([("d", c_d), ("e", c_e)])
+    s = Sampler(num_samples=10000, include_all=True, mode='log' if args.log else 'raw')
 
-    construct = WordkitPipeline(stages=(corpora, transformers), sampler=s)
-    (X, samples), (X_orig, words) = construct.fit_transform(wordlist, strict=False)
+    from collections import Counter
+
+    words_ = corpora.fit_transform(wordlist)
+    X = transformers.fit_transform(words_)
+    X, words = s.sample(X, words_)
+
+    X[X == 0] = -1.
+
+    print(Counter([x['orthography'] for x in words]))
 
     orth_len = o.vec_len
     wordlist = list(wordlist)
@@ -85,11 +93,11 @@ if __name__ == "__main__":
         with cp.cuda.Device(args.gpu):
             X = cp.asarray(X, cp.float32)
             s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_len, phon_len=X.shape[1] - orth_len)
-            s.fit(X, args.epochs, total_updates=100, batch_size=1, init_pca=False, show_progressbar=True, stop_nb_updates=0.5)
+            s.fit(X, args.epochs, updates_epoch=1, batch_size=args.batch, show_progressbar=True, stop_nb_updates=args.neighborhood)
 
     else:
         print("using CPU")
         s = Wavesom((args.dim, args.dim), X.shape[1], 1.0, orth_len=orth_len, phon_len=X.shape[1] - orth_len)
-        s.fit(X, args.epochs, total_updates=100, batch_size=1, init_pca=False, show_progressbar=True, stop_nb_updates=1.)
+        s.fit(X, args.epochs, updates_epoch=1, batch_size=args.batch, show_progressbar=True, stop_nb_updates=args.neighborhood)
 
     s.save(args.file)

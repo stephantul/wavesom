@@ -43,7 +43,7 @@ class Wavesom(Som):
 
         self.orth_len = orth_len
         self.phon_len = phon_len
-        self.state = np.ones(len(self.weights))
+        self.state = None
 
     @classmethod
     def load(cls, path, array_type=np):
@@ -103,7 +103,7 @@ class Wavesom(Som):
         activations = activations[:X.shape[0]]
         return activations.reshape(X.shape[0], self.weight_dim)
 
-    def predict_part(self, X, offset, vec_length=0):
+    def predict_part(self, X, offset, vec_length=None):
         """
         Predict BMUs based on part of the weights.
 
@@ -118,28 +118,34 @@ class Wavesom(Som):
             X = X[:, :vec_length]
 
         dist = self.predict_distance_part(X, offset)
-        return dist.__getattr__(self.argfunc)(axis=1)
+        return dist.__getattribute__(self.argfunc)(axis=1)
 
-    def statify(self):
+    def statify(self, states, binarize=True):
         """Extract the current state vector as an exemplar."""
-        p = (self.weights * self.state[:, None]).mean(0)
+        p = (self.weights[None, :, :] * states[:, :, None]).mean(1)
+
+        p[p < 0] = -1.
+        p[p >= 0] = 1.
+
         return p
 
-    def activation_function(self, x):
+    def activation_function(self, X):
         """
         Generate an activation given some input.
 
         The activation function returns an n-dimensional vector between 0
         and 1, where values closer to 1 imply more similarity.
 
-        :param x: The input datum.
+        :param x: The input data.
         :return: An activation.
         """
-        x = np.exp(-np.squeeze(self.predict_distance_part(x[None, :], 0)))
-        x -= (x.mean() + x.std())
-        return x
+        if np.ndim(X) == 1:
+            X = X[None, :]
+        X = np.exp(-self.predict_distance_part(X, 0))
+        X -= (X.mean(1) + X.std(1))[:, None]
+        return X
 
-    def converge(self, x, max_iter=1000, tol=0.001):
+    def converge(self, X, batch_size=32, max_iter=10000, tol=0.001):
         """
         Run activations until convergence.
 
@@ -155,45 +161,52 @@ class Wavesom(Som):
         """
         output = []
 
-        for idx in range(max_iter):
-            s = self.activate(x, iterations=1)
-            if idx != 0 and np.abs(np.sum(s[0] - output[-1])) < tol:
-                break
-            output.append(np.squeeze(s))
-        output = np.array(output)
-        if output.ndim == 1:
-            return output[None, :]
-        return output
+        for b_idx in range(0, len(X), batch_size):
 
-    def activate(self, x=None, iterations=20):
+            batch = X[b_idx: b_idx+batch_size]
+            states = np.ones((len(batch), self.weight_dim))
+            prev = None
+
+            for idx in range(max_iter):
+                states = self.activate(states, batch)
+                if idx != 0:
+                    z = np.abs(states - prev).sum(-1)
+                    if np.all((z < tol)):
+                        break
+
+                prev = np.copy(states)
+            output.append(np.squeeze(prev))
+
+        return np.stack(output), idx
+
+    def activate(self, states, X=None):
         """
         Activate the network for a number of iterations.
 
-        :param x: The input, can be None, in which case the systrm oscillates.
+        :param x: The input, can be None, in which case the system oscillates.
         :param iterations: The number of iterations for which to run.
         :return: A 2D array, containing the states the system moved through
         """
-        if x is None:
-            x = np.zeros((len(self.weights)))
+        if X is None:
+            X = np.zeros((len(states), len(self.weights)))
         else:
-            x = self.activation_function(x)
+            X = self.activation_function(X)
 
-        output = []
+        states_weights = self.weights[None, :, :] * states[:, :, None]
+        f = self.activation_function((states_weights).mean(1))
 
-        for idx in range(iterations):
+        delta = X + f
 
-            p = self.activation_function(self.statify())
-            delta = x + p
-            pos = delta >= 0
-            neg = delta < 0
+        pos = delta >= 0
+        neg = delta < 0
 
-            # The ceiling is set at 2.0
-            # This term ensures that updates get smaller as
-            # activation approaches the ceiling.
-            ceiling = (1.0 - (self.state[pos] / 2.))
-            # Do dampening.
-            self.state[pos] += delta[pos] * ceiling
-            self.state[neg] += delta[neg] * self.state[neg]
-            output.append(np.copy(self.state))
+        # The ceiling is set at 2.0
+        # This term ensures that updates get smaller as
+        # activation approaches the ceiling.
+        ceiling = (1.0 - (states[pos] / 2.))
 
-        return np.array(output)
+        # Do dampening.
+        states[pos] += delta[pos] * ceiling
+        states[neg] += delta[neg] * states[neg]
+
+        return states
