@@ -16,23 +16,17 @@ if __name__ == "__main__":
 
         a = np.array(list(product((0, 1), repeat=cardinality)))
         X = np.concatenate([a, a], 1)
-        X[X == 0] = -1.
+        X = np.sign(X)
 
-        s = Wavesom((10, 10), X.shape[1], 1.0, orth_len=a.shape[1], phon_len=a.shape[1])
+        s = Wavesom((10, 10), X.shape[1], 1.0)
         s.fit(X, num_epochs=100, updates_epoch=1, batch_size=1)
         print("trained")
         start = time.time()
 
-        X_ = X
-
         words = [str(x) for x in np.arange(len(X))]
 
-        representations = s.converge(X_[:, :s.orth_len], batch_size=250, tol=0.01)
-        r_ = np.copy(representations)
-        representations = (s.weights[None, :, :] * representations[:, :, None]).mean(1)
-
-        representations[representations <= .0] = -1.
-        representations[representations > .0] = 1.0
+        representations = s.converge(X[:, :X.shape[1]//2], batch_size=250, tol=0.01)
+        representations = s.statify(representations)
 
         print(representations.shape, X.shape)
         score = len(X[np.all(X == representations, axis=1)]) / len(X)

@@ -28,8 +28,6 @@ class Wavesom(Som):
                  map_dimensions,
                  data_dimensionality,
                  learning_rate,
-                 orth_len,
-                 phon_len,
                  lrfunc=expo,
                  nbfunc=expo,
                  neighborhood=None):
@@ -41,8 +39,6 @@ class Wavesom(Som):
                          nbfunc,
                          neighborhood)
 
-        self.orth_len = orth_len
-        self.phon_len = phon_len
         self.state = None
 
     @classmethod
@@ -123,11 +119,7 @@ class Wavesom(Som):
     def statify(self, states, binarize=True):
         """Extract the current state vector as an exemplar."""
         p = (self.weights[None, :, :] * states[:, :, None]).mean(1)
-
-        p[p < 0] = -1.
-        p[p >= 0] = 1.
-
-        return p
+        return np.sign(p)
 
     def activation_function(self, X):
         """
@@ -175,9 +167,9 @@ class Wavesom(Som):
                         break
 
                 prev = np.copy(states)
-            output.append(np.squeeze(prev))
+            output.extend(states)
 
-        return np.stack(output), idx
+        return np.stack(output)
 
     def activate(self, states, X=None):
         """

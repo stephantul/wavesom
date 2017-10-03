@@ -1,33 +1,15 @@
-"""Mental lexicon bilingualism."""
 import numpy as np
-import json
-import cProfile
-import time
 
-from wavesom.wavesom import Wavesom
+from sklearn.cluster import KMeans
+
+from wavesom import Wavesom
 from wordkit.readers import Celex
 from wordkit.transformers import ONCTransformer, LinearTransformer
 from wordkit.features import fourteen, binary_features
 from wordkit.feature_extraction import phoneme_features
 from sklearn.pipeline import FeatureUnion
-from sklearn.cluster import KMeans
-
-from collections import defaultdict
-
-
-def soft_clip(X, weights, length, normalize=False):
-
-    dists = np.linalg.norm(X[:, None, :length] - weights[None, :, :length],
-                           axis=2)
-    if normalize:
-        # dists -= dists.mean(0)
-        dists /= dists.sd(0)
-    return np.clip(dists.mean(0) - dists, a_min=0, a_max=None)
-
 
 if __name__ == "__main__":
-
-    path = "saved_models/amlap_lex_1000e_2525map.json"
 
     wordlist = {'kind', 'mind', 'bind',
                 'room', 'wolf', 'way',
@@ -75,56 +57,23 @@ if __name__ == "__main__":
     X[X == 0] = -1.
     words = [" ".join((x['orthography'], "-".join(x['syllables']))) for x in words_]
 
-    np.random.seed(44)
-
-    num_clust = 75
-
-    k = KMeans(num_clust)
-    k.fit(X)
-    s = Wavesom((num_clust, 1), X.shape[1], 1.0)
-    s.weights = k.cluster_centers_
-    # s = Wavesom.load(path, np)
-
-    w2l = defaultdict(list)
-    w2l_form = defaultdict(list)
-    l2w = defaultdict(set)
-    quant = {}
-    w2id = defaultdict(list)
-
-    for idx, (n, x, q) in enumerate(zip(words, s.predict(X), s.quant_error(X))):
-        w2id[n.split()[0]].append(idx)
-        w2l_form[n.split()[0]].append(x)
-        w2l[n].append(x)
-        l2w[x].add(n)
-        quant[n] = q
-
     unique_ortho = {v.split()[0]: X[idx] for idx, v in enumerate(words)}
 
     o_words, vectors = zip(*unique_ortho.items())
     vectors = np.array(vectors)
 
-    inv = s.invert_projection(X, words)
-    inv_o = s.invert_projection(vectors, o_words).reshape(s.weight_dim)
+    np.random.seed(44)
 
-    scores = {}
+    num_k = 60
 
-    results = []
-    states = []
+    k = KMeans(n_clusters=num_k)
+    result = k.fit_transform(X)
 
-    start = time.time()
-    p = s.converge(X, max_iter=10000, batch_size=1)
-    z = s.converge(vectors[:, :98], max_iter=10000, batch_size=1)
-    print("Took {} seconds".format(time.time() - start))
+    s = Wavesom((num_k, 1), X.shape[1], 1.0, 98, X.shape[1]-98)
+    s.weights = k.cluster_centers_
 
-    clip = s.statify(soft_clip(vectors, s.weights, 98))
-    dist_2 = np.linalg.norm(clip[None, :, :] - X[:, None, :], axis=2).argmin(0)
-    res_3 = [(o_words[idx], words[d]) for idx, d in enumerate(dist_2)]
-    score_clipped = len([x for x in res_3 if (x[0] == x[1].split(" ")[0])]) / len(res_3)
+    c = s.converge(vectors[:, :s.orth_len], batch_size=1, max_iter=10000, tol=0.0001)
 
-    pert = np.linalg.norm(p[None, :, :] - z[:, None, :], axis=2).argmin(1)
-    res_2 = [(o_words[idx], words[d]) for idx, d in enumerate(pert)]
-    score_distributed = len([x for x in res_2 if (x[0] == x[1].split(" ")[0])]) / len(res_2)
-
-    dist = np.linalg.norm(s.statify(z)[None, :, :] - X[:, None, :], axis=2).argmin(0)
+    dist = np.linalg.norm(s.statify(c)[None, :, :] - X[:, None, :], axis=2).argmin(0)
     res = [(o_words[idx], words[d]) for idx, d in enumerate(dist)]
     score_reconstruction = len([x for x in res if (x[0] == x[1].split(" ")[0])]) / len(res)
