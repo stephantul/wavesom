@@ -8,6 +8,12 @@ from somber import Som
 from somber.components.utilities import expo
 
 
+def softmax(w):
+    e = np.exp(w)
+    dist = e / np.sum(e, axis=1)[:, None]
+    return dist
+
+
 class Wavesom(Som):
     """A Time-Dependent SOM."""
 
@@ -30,7 +36,8 @@ class Wavesom(Som):
                  learning_rate,
                  lrfunc=expo,
                  nbfunc=expo,
-                 neighborhood=None):
+                 neighborhood=None,
+                 dampening=.001):
 
         super().__init__(map_dimensions,
                          data_dimensionality,
@@ -40,6 +47,7 @@ class Wavesom(Som):
                          neighborhood)
 
         self.state = None
+        self.dampening = dampening
 
     @classmethod
     def load(cls, path, array_type=np):
@@ -61,8 +69,6 @@ class Wavesom(Som):
         s = cls(data['map_dimensions'],
                 data['data_dimensionality'],
                 data['learning_rate'],
-                data['orth_len'],
-                data['phon_len'],
                 lrfunc=lrfunc,
                 nbfunc=nbfunc,
                 neighborhood=data['neighborhood'])
@@ -118,8 +124,8 @@ class Wavesom(Som):
 
     def statify(self, states, binarize=True):
         """Extract the current state vector as an exemplar."""
-        p = (self.weights[None, :, :] * states[:, :, None]).mean(1)
-        return np.sign(p)
+        p = (self.weights[None, :, :] * states[:, :, None]).sum(1)
+        return p / (p.max(0) / self.weights.max(0))
 
     def activation_function(self, X):
         """
@@ -133,9 +139,9 @@ class Wavesom(Som):
         """
         if np.ndim(X) == 1:
             X = X[None, :]
-        X = np.exp(-self.predict_distance_part(X, 0))
-        X -= (X.mean(1) + X.std(1))[:, None]
-        return X
+
+        z = self.predict_distance_part(X, 0)
+        return softmax(z.max(1)[:, None] - z)
 
     def converge(self, X, batch_size=32, max_iter=10000, tol=0.001):
         """
@@ -152,24 +158,30 @@ class Wavesom(Som):
         while converging.
         """
         output = []
+        idxes = []
 
         for b_idx in range(0, len(X), batch_size):
 
             batch = X[b_idx: b_idx+batch_size]
-            states = np.ones((len(batch), self.weight_dim))
+            states = np.ones((len(batch), self.weight_dim)) * .5
             prev = None
+
+            batch = self.activation_function(batch)
 
             for idx in range(max_iter):
                 states = self.activate(states, batch)
                 if idx != 0:
                     z = np.abs(states - prev).sum(-1)
                     if np.all((z < tol)):
+                        idxes.extend([idx] * len(batch))
                         break
 
                 prev = np.copy(states)
+            else:
+                idxes.extend([idx] * len(batch))
             output.extend(states)
 
-        return np.stack(output)
+        return np.stack(output), idxes
 
     def activate(self, states, X=None):
         """
@@ -181,13 +193,10 @@ class Wavesom(Som):
         """
         if X is None:
             X = np.zeros((len(states), len(self.weights)))
-        else:
-            X = self.activation_function(X)
 
-        states_weights = self.weights[None, :, :] * states[:, :, None]
-        f = self.activation_function((states_weights).mean(1))
-
+        f = self.activation_function(self.statify(states))
         delta = X + f
+        delta -= self.dampening
 
         pos = delta >= 0
         neg = delta < 0
@@ -195,7 +204,7 @@ class Wavesom(Som):
         # The ceiling is set at 2.0
         # This term ensures that updates get smaller as
         # activation approaches the ceiling.
-        ceiling = (1.0 - (states[pos] / 2.))
+        ceiling = (1.0 - (states[pos] / 1.))
 
         # Do dampening.
         states[pos] += delta[pos] * ceiling
