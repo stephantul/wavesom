@@ -112,8 +112,8 @@ if __name__ == "__main__":
     states = []
 
     start = time.time()
-    p = s.converge(X, max_iter=10000, batch_size=1)
-    z = s.converge(vectors[:, :98], max_iter=10000, batch_size=1)
+    full_conv, full_idx = s.converge(X, max_iter=10000, batch_size=1)
+    partial_conv, partial_idx = s.converge(vectors[:, :98], max_iter=10000, batch_size=1)
     print("Took {} seconds".format(time.time() - start))
 
     clip = s.statify(soft_clip(vectors, s.weights, 98))
@@ -121,10 +121,10 @@ if __name__ == "__main__":
     res_3 = [(o_words[idx], words[d]) for idx, d in enumerate(dist_2)]
     score_clipped = len([x for x in res_3 if (x[0] == x[1].split(" ")[0])]) / len(res_3)
 
-    pert = np.linalg.norm(p[None, :, :] - z[:, None, :], axis=2).argmin(1)
+    pert = np.linalg.norm(full_conv[None, :, :] - partial_conv[:, None, :], axis=2).argmin(1)
     res_2 = [(o_words[idx], words[d]) for idx, d in enumerate(pert)]
     score_distributed = len([x for x in res_2 if (x[0] == x[1].split(" ")[0])]) / len(res_2)
 
-    dist = np.linalg.norm(s.statify(z)[None, :, :] - X[:, None, :], axis=2).argmin(0)
+    dist = np.linalg.norm(s.statify(partial_conv)[None, :, :] - X[:, None, :], axis=2).argmin(0)
     res = [(o_words[idx], words[d]) for idx, d in enumerate(dist)]
     score_reconstruction = len([x for x in res if (x[0] == x[1].split(" ")[0])]) / len(res)
