@@ -125,7 +125,7 @@ class Wavesom(Som):
     def statify(self, states, binarize=True):
         """Extract the current state vector as an exemplar."""
         p = (self.weights[None, :, :] * states[:, :, None]).sum(1)
-        return p / (p.max(0) / self.weights.max(0))
+        return p
 
     def activation_function(self, X):
         """
@@ -141,9 +141,9 @@ class Wavesom(Som):
             X = X[None, :]
 
         z = self.predict_distance_part(X, 0)
-        return softmax(z.max(1)[:, None] - z)
+        return softmax((z.max(1)[:, None] - z) ** 2)
 
-    def converge(self, X, batch_size=32, max_iter=10000, tol=0.001):
+    def converge(self, X, batch_size=1, max_iter=10000, tol=10e-18):
         """
         Run activations until convergence.
 
@@ -163,13 +163,12 @@ class Wavesom(Som):
         for b_idx in range(0, len(X), batch_size):
 
             batch = X[b_idx: b_idx+batch_size]
-            states = np.ones((len(batch), self.weight_dim)) * .5
             prev = None
 
-            batch = self.activation_function(batch)
+            states = self.activation_function(batch)
 
             for idx in range(max_iter):
-                states = self.activate(states, batch)
+                states = self.activate(states)
                 if idx != 0:
                     z = np.abs(states - prev).sum(-1)
                     if np.all((z < tol)):
@@ -183,7 +182,7 @@ class Wavesom(Som):
 
         return np.stack(output), idxes
 
-    def activate(self, states, X=None):
+    def activate(self, states):
         """
         Activate the network for a number of iterations.
 
@@ -191,23 +190,4 @@ class Wavesom(Som):
         :param iterations: The number of iterations for which to run.
         :return: A 2D array, containing the states the system moved through
         """
-        if X is None:
-            X = np.zeros((len(states), len(self.weights)))
-
-        f = self.activation_function(self.statify(states))
-        delta = X + f
-        delta -= self.dampening
-
-        pos = delta >= 0
-        neg = delta < 0
-
-        # The ceiling is set at 2.0
-        # This term ensures that updates get smaller as
-        # activation approaches the ceiling.
-        ceiling = (1.0 - (states[pos] / 1.))
-
-        # Do dampening.
-        states[pos] += delta[pos] * ceiling
-        states[neg] += delta[neg] * states[neg]
-
-        return states
+        return self.activation_function(self.statify(states))
