@@ -5,7 +5,7 @@ import cupy as cp
 from tqdm import tqdm
 
 from somber import Som
-from somber.components.utilities import expo
+from somber.components.utilities import expo, linear
 
 
 def softmax(w):
@@ -37,7 +37,7 @@ class Wavesom(Som):
                  lrfunc=expo,
                  nbfunc=expo,
                  neighborhood=None,
-                 dampening=.001):
+                 dampening=.1):
 
         super().__init__(map_dimensions,
                          data_dimensionality,
@@ -122,10 +122,10 @@ class Wavesom(Som):
         dist = self.predict_distance_part(X, offset)
         return dist.__getattribute__(self.argfunc)(axis=1)
 
-    def statify(self, states, binarize=True):
+    def statify(self, states):
         """Extract the current state vector as an exemplar."""
         p = (self.weights[None, :, :] * states[:, :, None]).sum(1)
-        return p / (p.max(0) / self.weights.max(0))
+        return p
 
     def activation_function(self, X):
         """
@@ -179,9 +179,17 @@ class Wavesom(Som):
                 prev = np.copy(states)
             else:
                 idxes.extend([idx] * len(batch))
-            output.extend(states)
+            output.extend(np.copy(states))
 
         return np.stack(output), idxes
+
+    def center(self, states):
+        """Center the states."""
+        s = self.statify(states)
+        # Centering
+        s -= s.min(0)[None, :]
+        # Shifting
+        return s / (s.max(0) / self.weights.max(0))
 
     def activate(self, states, X=None):
         """
