@@ -1,98 +1,90 @@
 """Code for the Time-dependent Wavesom."""
 import numpy as np
-import json
-import cupy as cp
-from tqdm import tqdm
 
+from tqdm import tqdm
 from somber import Som
-from somber.components.utilities import expo, linear
 
 
 def softmax(w):
+    """Calculate the softmax."""
     e = np.exp(w)
     dist = e / np.sum(e, axis=1)[:, None]
     return dist
 
 
 class Wavesom(Som):
-    """A Time-Dependent SOM."""
+    """
+    A Time-Dependent Self-Organizing Map.
 
-    # Static property names
-    param_names = {'neighborhood',
-                   'learning_rate',
-                   'map_dimensions',
-                   'weights',
-                   'data_dimensionality',
-                   'lrfunc',
-                   'nbfunc',
-                   'valfunc',
-                   'argfunc',
-                   'orth_len',
-                   'phon_len'}
+    The WaveSom is a Self-Organizing Map equipped with a softmax function.
+    This allows the SOM to produce a probability distribution over neurons in
+    response to some input. In addition, the WaveSOM is equipped with functions
+    that allow it to provide responses to partial input. This allows it to
+    account for missing datapoints.
+
+    Parameters
+    ==========
+    map_dimensions : tuple of int
+        The dimensions of the map. Can be any number of dimensions, as the
+        underlying library can handle hypermaps.
+    data_dimensionality : int
+        The number of features.
+    learning_rate : float
+        The learning rate.
+    influence : float, optional, default None
+        The starting influence parameter, also sometimes called Lamdba. If
+        this is set to None, it is automatically inferred.
+    lr_lambda : float
+        Controls the steepness of the exponential function that decreases
+        the learning rate.
+    nb_lambda : float
+        Controls the steepness of the exponential function that decreases
+        the neighborhood.
+
+    """
 
     def __init__(self,
                  map_dimensions,
                  data_dimensionality,
                  learning_rate,
-                 lrfunc=expo,
-                 nbfunc=expo,
-                 neighborhood=None,
-                 dampening=.1):
-
+                 influence=None,
+                 lr_lambda=2.5,
+                 infl_lambda=2.5):
+        """Init of a time-dependent SOM."""
         super().__init__(map_dimensions,
                          data_dimensionality,
                          learning_rate,
-                         lrfunc,
-                         nbfunc,
-                         neighborhood)
+                         influence)
 
         self.state = None
-        self.dampening = dampening
 
-    @classmethod
-    def load(cls, path, array_type=np):
-        """
-        Load a Wavesom.
-
-        :param path: The path to the JSON file where the wavesom is stored
-        :param array_type: The array type to use.
-        :return: A wavesom.
-        """
-        data = json.load(open(path))
-
-        weights = data['weights']
-        weights = array_type.asarray(weights, dtype=np.float32)
-
-        lrfunc = expo if data['lrfunc'] == 'expo' else linear
-        nbfunc = expo if data['nbfunc'] == 'expo' else linear
-
-        s = cls(data['map_dimensions'],
-                data['data_dimensionality'],
-                data['learning_rate'],
-                lrfunc=lrfunc,
-                nbfunc=nbfunc,
-                neighborhood=data['neighborhood'])
-
-        s.weights = weights
-        s.trained = True
-
-        return s
-
-    def predict_distance_part(self,
-                              X,
-                              offset,
-                              batch_size=1,
-                              show_progressbar=False):
+    def transform_partial(self,
+                          X,
+                          offset=0,
+                          batch_size=1,
+                          show_progressbar=False):
         """
         Compute the prediction for part of the weights, specified by an offset.
 
-        :param X: The input data
-        :param offset: The offset which is applied to axis 1 of X before
-        calculating similarity.
-        :return: A matrix containing the distance of each sample to
-        each weight.
+        Parameters
+        ==========
+        X : np.array (N, num_features)
+            The input data.
+        offset : int, optional, default 0
+            The offset with which to offset the input data wrt the weights.
+            For example, if the offset is 10, then the 0th column of X will be
+            assumed to be aligned with the 10th column of the weights W.
+        batch_size : int, optional, default 1
+            The batch size to use.
+        show_progressbar : bool, optional, default False
+            Whether to show a progressbar.
+
+        Returns
+        =======
+        activations : np.array (N, num_neurons)
+            The activation of each neuron in response to each datapoint.
+
         """
-        xp = cp.get_array_module()
         batched = self._create_batches(X, batch_size, shuffle_data=False)
 
         activations = []
@@ -101,31 +93,53 @@ class Wavesom(Som):
         for x in tqdm(batched, disable=not show_progressbar):
             activations.extend(self.distance_function(x, temp_weights)[0])
 
-        activations = xp.asarray(activations, dtype=xp.float32)
+        activations = np.asarray(activations, dtype=np.float32)
         activations = activations[:X.shape[0]]
-        return activations.reshape(X.shape[0], self.weight_dim)
+        return activations.reshape(X.shape[0], self.num_neurons)
 
-    def predict_part(self, X, offset, vec_length=None):
-        """
-        Predict BMUs based on part of the weights.
-
-        :param X: The input data.
-        :param offset: The offset which is applied to axis 1 of X before
-        calculating similarity.
-        :param orth_vec_len: The length of the vector over which similarity
-        is calculated.
-        :return:
-        """
-        if vec_length:
-            X = X[:, :vec_length]
-
-        dist = self.predict_distance_part(X, offset)
+    def predict_partial(self, X, offset=0):
+        """Predict BMUs based on part of the weights."""
+        dist = self.transform_partial(X, offset)
         return dist.__getattribute__(self.argfunc)(axis=1)
 
-    def statify(self, states):
-        """Extract the current state vector as an exemplar."""
-        p = (self.weights[None, :, :] * states[:, :, None]).sum(1)
-        return p
+    def converge(self, X, max_iter=1000, tol=0.0001, reset_state=True):
+        """Run activations until convergence."""
+        output = []
+        idxes = []
+
+        states = np.zeros((1, self.num_neurons)) / self.num_neurons
+
+        for x in X:
+            o = []
+            if reset_state:
+                states = np.zeros((1, len(self.weights)))
+            prev = None
+
+            for idx in range(max_iter):
+                states = self.activate(x, states)
+                if idx != 0:
+                    z = np.abs((states / states.sum()) - (prev / prev.sum())).sum(-1)
+
+                    if np.all((z < tol)):
+                        idxes.extend([idx] * len(states))
+                        break
+
+                prev = np.copy(states)
+                o.append(prev)
+            else:
+                idxes.extend([idx] * len(states))
+
+            output.append(np.array(o))
+
+        return output, idxes
+
+    def center(self, states):
+        """Center the states."""
+        s = self.exemplarify(states)
+        # Centering
+        s -= s.min(0)[None, :]
+        # Shifting
+        return np.nan_to_num(s / (s.max(0) / self.weights.max(0)))
 
     def activation_function(self, X):
         """
@@ -134,88 +148,30 @@ class Wavesom(Som):
         The activation function returns an n-dimensional vector between 0
         and 1, where values closer to 1 imply more similarity.
 
-        :param x: The input data.
-        :return: An activation.
+        Parameters
+        ==========
+        X : np.array (N, num_features)
+            The inut data.
+
+        Returns
+        =======
+        z : np.array (N, num_neurons)
+            The activity of the map in response to the input data.
+
         """
         if np.ndim(X) == 1:
             X = X[None, :]
 
-        z = self.predict_distance_part(X, 0)
-        return softmax(z.max(1)[:, None] - z)
+        z = softmax(-self.transform_partial(X))
+        return z
 
-    def converge(self, X, batch_size=32, max_iter=10000, tol=0.001):
-        """
-        Run activations until convergence.
+    def exemplarify(self, states):
+        """Extract the current state vector as an exemplar."""
+        return (self.weights[None, :, :] * states[:, :, None]).mean(1)
 
-        Convergence is specified as the point when the difference between
-        the state vector in the current step and the previous step is closer
-        than the tolerance.
-
-        :param x: The input.
-        :param max_iter: The maximum iterations to run for.
-        :param tol: The tolerance threshold.
-        :return: A 2D array, containing the states the system moved through
-        while converging.
-        """
-        output = []
-        idxes = []
-
-        for b_idx in range(0, len(X), batch_size):
-
-            batch = X[b_idx: b_idx+batch_size]
-            states = np.ones((len(batch), self.weight_dim)) * .5
-            prev = None
-
-            batch = self.activation_function(batch)
-
-            for idx in range(max_iter):
-                states = self.activate(states, batch)
-                if idx != 0:
-                    z = np.abs(states - prev).sum(-1)
-                    if np.all((z < tol)):
-                        idxes.extend([idx] * len(batch))
-                        break
-
-                prev = np.copy(states)
-            else:
-                idxes.extend([idx] * len(batch))
-            output.extend(np.copy(states))
-
-        return np.stack(output), idxes
-
-    def center(self, states):
-        """Center the states."""
-        s = self.statify(states)
-        # Centering
-        s -= s.min(0)[None, :]
-        # Shifting
-        return s / (s.max(0) / self.weights.max(0))
-
-    def activate(self, states, X=None):
-        """
-        Activate the network for a number of iterations.
-
-        :param x: The input, can be None, in which case the system oscillates.
-        :param iterations: The number of iterations for which to run.
-        :return: A 2D array, containing the states the system moved through
-        """
-        if X is None:
-            X = np.zeros((len(states), len(self.weights)))
-
-        f = self.activation_function(self.statify(states))
-        delta = X + f
-        delta -= self.dampening
-
-        pos = delta >= 0
-        neg = delta < 0
-
-        # The ceiling is set at 2.0
-        # This term ensures that updates get smaller as
-        # activation approaches the ceiling.
-        ceiling = (1.0 - (states[pos] / 1.))
-
-        # Do dampening.
-        states[pos] += delta[pos] * ceiling
-        states[neg] += delta[neg] * states[neg]
-
-        return states
+    def activate(self, x, states):
+        """Activate the network for single iteration."""
+        inp = self.activation_function(x[None, :])
+        f = self.exemplarify(states)
+        delta = self.activation_function(f)
+        return (inp + delta) / 2

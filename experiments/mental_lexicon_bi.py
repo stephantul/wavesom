@@ -4,11 +4,12 @@ import json
 import cProfile
 import time
 
-from wavesom.wavesom import Wavesom
+from wavesom.wavesom import Wavesom, softmax
 from wordkit.readers import Celex
-from wordkit.transformers import ONCTransformer, LinearTransformer
+from wordkit.transformers import ONCTransformer, LinearTransformer, CVTransformer, OpenNGramTransformer
 from wordkit.features import binary_features, fourteen
 from wordkit.feature_extraction import phoneme_features, one_hot_characters, one_hot_phonemes
+from wordkit.samplers import Sampler
 from sklearn.pipeline import FeatureUnion
 from sklearn.cluster import KMeans
 # from skcmeans.algorithms import Probabilistic
@@ -23,18 +24,16 @@ def reconstruction_error(X, reconstruction):
     return 1 - np.sum(X != reconstruction) / np.prod(X.shape)
 
 
-def scoring(reconstruction, X, words):
+def scoring(reconstruction, X, words, idx=0):
 
     subbed = X[None, :, :] - reconstruction[:, None, :]
     dist = np.linalg.norm(subbed, axis=2).argmin(1)
     res = [(words[d], words[idx]) for idx, d in enumerate(dist)]
-    wrong = [x for x in res if (x[0].split(" ")[0] != x[1].split(" ")[0])]
+    wrong = [x for x in res if (x[0].split()[idx] != x[1].split()[idx])]
     return 1 - (len(wrong) / len(res)), wrong
 
 
 if __name__ == "__main__":
-
-    path = "saved_models/amlap_lex_1000e_1010map.json"
 
     wordlist = {'kind', 'mind', 'bind',
                 'room', 'wolf', 'way',
@@ -67,40 +66,34 @@ if __name__ == "__main__":
                 'leek', 'gek',
                 'creek', 'ziek', 'piek'}
 
-    o = LinearTransformer(fourteen)
-    p = ONCTransformer(phoneme_features(binary_features))
+    o = LinearTransformer(one_hot_characters(ascii_lowercase))
+    p = ONCTransformer(one_hot_phonemes(use_long=True))
 
     transformers = FeatureUnion([("o", o), ("p", p)])
 
-    c_d = Celex("data/dpl.cd", language='nld', merge_duplicates=True, minfreq=0)
-    c_e = Celex("data/epl.cd", language='eng', merge_duplicates=True, minfreq=0)
+    f = lambda x: x['syllables']
+
+    c_d = Celex("data/dpl.cd", language='nld', merge_duplicates=True, filter_function=f)
+    c_e = Celex("data/epl.cd", language='eng', merge_duplicates=True, filter_function=f)
 
     corpora = FeatureUnion([("d", c_d), ("e", c_e)])
 
     np.random.seed(21)
 
     words_ = corpora.fit_transform(wordlist)
-    # words_ = [x for x in words_ if not set(x['orthography']) - set(ascii_lowercase) and len(x['orthography']) <= 6]
-    new_words = []
-    for x in np.random.randint(0, len(words_), 1000):
-        new_words.append(words_[x])
-    words_ = new_words
     X = transformers.fit_transform(words_)
-    # X = X[:, X.sum(0) != 0]
 
-    words = [" ".join((x['orthography'], "-".join(x['syllables']))) for x in words_]
+    samp = Sampler(X, words_, [x['frequency'] for x in words_], mode='log')
+    X_sampled, _ = samp.sample(10000)
+    o_len = o.vec_len
 
-    num_clust = 100
+    words = [" ".join((x['orthography'], "-".join(["|".join(y) for y in x['syllables']]))) for x in words_]
 
-    # k = KMeans(num_clust)
-    # k.fit(X)
-    s = Wavesom.load(path)
-    s.weights = (s.weights + 1) * .5
-    # s = Wavesom((num_clust, 1), X.shape[1], 1.0, dampening=.1)
-    # s.weights = k.cluster_centers_
+    s = Wavesom((5, 5), X.shape[1], 1.0)
+    s.fit(X_sampled, num_epochs=10, show_progressbar=True, batch_size=1)
 
-    print("Training finished")
-    # s = Wavesom.load(path, np)
+    # s = Wavesom.load("saved_models/mental_lexicon_bi.json")
+    # print("Training finished")
 
     w2l = defaultdict(list)
     w2l_form = defaultdict(list)
@@ -108,7 +101,7 @@ if __name__ == "__main__":
     quant = {}
     w2id = defaultdict(list)
 
-    for idx, (n, x, q) in enumerate(zip(words, s.predict(X), s.quant_error(X))):
+    for idx, (n, x, q) in enumerate(zip(words, s.predict(X), s.quantization_error(X))):
         w2id[n.split()[0]].append(idx)
         w2l_form[n.split()[0]].append(x)
         w2l[n].append(x)
@@ -122,37 +115,9 @@ if __name__ == "__main__":
 
     start = time.time()
 
-    scores = {}
-
-    num_stuff = 100
-
-    for idx, x in enumerate(np.linspace(-.8, .8, num_stuff)):
-
-        print("{}/{}".format(idx, num_stuff))
-        s.dampening = x
-        print(s.dampening)
-        start_2 = time.time()
-
-        full_conv, full_idx = s.converge(X)
-        partial_conv, partial_idx = s.converge(X[:, :o.vec_len])
-
-        conv_score, _ = scoring(partial_conv, full_conv, words)
-
-        conv_reconstruction = s.center(partial_conv)
-
-        # Calculate scores
-        conv_score_reconstruction, _ = scoring(conv_reconstruction, X, words)
-        conv_score_reconstruction_phon, _ = scoring(conv_reconstruction[:, o.vec_len:], X[:, o.vec_len:], words)
-
-        scores[x] = (conv_score, conv_score_reconstruction, conv_score_reconstruction_phon, np.max(partial_idx), np.mean(partial_idx), np.min(partial_idx))
-
-    print("Took {} seconds".format(time.time() - start_2))
-
-    print("Took {} seconds".format(time.time() - start))
-
     # baseline
-    p = s.predict_part(X[:, :o.vec_len], 0)
-    inv = s.invert_projection(X, words).reshape(s.weight_dim)
+    p = s.predict_partial(X[:, :o_len], 0)
+    inv = s.invert_projection(X, words).reshape(s.num_neurons)
 
     baseline = []
     for idx, x in enumerate(p):
@@ -160,27 +125,28 @@ if __name__ == "__main__":
 
     baseline_score = len([x for x, y in baseline if (x.split()[0] == y.split()[0])]) / len(baseline)
 
-    soft_all = s.activation_function(X)
-    rep_a = s.center(soft_all)
+    soft_part = s.activation_function(X[:, :o_len])
+    soft_full = s.activation_function(X)
 
-    softmax_reconstruction, _ = scoring(rep_a, X, words)
+    rep_part = s.center(soft_part)
+    rep_full = s.center(soft_full)
 
-    soft_part = s.activation_function(X[:, :o.vec_len])
-    rep_b = s.center(soft_part)
+    soft_test_part = softmax(-s.transform_partial(X[:, :o_len]))
+    soft_test_full = softmax(-s.transform_partial(X))
 
-    softmax_score, _ = scoring(rep_b, rep_a, words)
+    rep_test_part = s.center(soft_test_part)
+    rep_test_full = s.center(soft_test_full)
+
+    softmax_reconstruction, _ = scoring(rep_part, X, words)
+    softmax_reconstruction_phon, _ = scoring(rep_part[:, o_len:], X[:, o_len:], words, idx=1)
+    softmax_score, _ = scoring(rep_part, rep_full, words)
+
+    test_1 = scoring(rep_test_part, rep_test_full, words)
+    test_2 = scoring(rep_test_part, X, words)
+    test_3 = scoring(rep_test_part[:, o_len:], X[:, o_len:], words, idx=1)
 
     print("Took {} seconds".format(time.time() - start))
     print("Soft: ", softmax_score)
-    print("S_RE: ", softmax_reconstruction)
-    print("Conv: ", conv_score)
-    print("Reco: ", conv_score_reconstruction)
-    print("Phon: ", conv_score_reconstruction_phon)
+    print("Soft_orth: ", softmax_reconstruction)
+    print("Soft_phon ", softmax_reconstruction_phon)
     print("Base: ", baseline_score)
-
-    xos = list(zip(*sorted(scores.items(), key=lambda x: x[0])))[1]
-    a, b, c, _, _, _ = zip(*xos)
-
-    plt.plot(a)
-    plt.plot(b)
-    plt.plot(c)
